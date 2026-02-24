@@ -24,7 +24,9 @@ export default function Home() {
         </div>
 
         <div className="mt-10">
-          <ProductRow />
+          <ProductRow title="Ofertas destacadas" />
+          <ProductRow title="Celulares" />
+          <ProductRow title="Accesorios" />
         </div>
       </main>
     </div>
