@@ -2,45 +2,30 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-
-type Banner = {
-  title: string;
-  subtitle: string;
-  cta: string;
-  href: string;
-};
+import { banners as allBanners } from "../data/banners"; // ✅ trae datos de afuera
 
 export default function BannerCarousel() {
-  const banners: Banner[] = useMemo(
-    () => [
-      {
-        title: "Ofertas de la semana",
-        subtitle: "Tecnología y accesorios con precios especiales.",
-        cta: "Ver promos",
-        href: "/",
-      },
-      {
-        title: "Atención por WhatsApp",
-        subtitle: "Consultas rápidas y seguimiento de pedidos.",
-        cta: "Escribinos",
-        href: "/contacto",
-      },
-      {
-        title: "Cuotas y financiación",
-        subtitle: "Opciones según disponibilidad (consultar).",
-        cta: "Consultar",
-        href: "/contacto",
-      },
-    ],
+  // Permite desactivar banners (enabled: false) sin borrarlos
+  const banners = useMemo(
+    () => allBanners.filter((b) => b.enabled !== false),
     []
   );
 
   const [i, setI] = useState(0);
 
+  // Seguridad: si cambian banners y el índice queda fuera
   useEffect(() => {
+    if (i >= banners.length) setI(0);
+  }, [banners.length, i]);
+
+  useEffect(() => {
+    if (banners.length <= 1) return; // no hace falta rotar si hay 0 o 1
     const t = setInterval(() => setI((v) => (v + 1) % banners.length), 4500);
     return () => clearInterval(t);
   }, [banners.length]);
+
+  // Si no hay banners activos, no renderiza el carrusel
+  if (banners.length === 0) return null;
 
   const b = banners[i];
 
@@ -49,8 +34,9 @@ export default function BannerCarousel() {
       <div className="grid gap-6 p-7 md:grid-cols-2 md:items-center md:p-10">
         <div>
           <p className="mb-2 inline-flex rounded-full bg-blue-600/10 px-3 py-1 text-xs font-semibold text-blue-700">
-            Punto Cell · Canal oficial
+            {b.badge ?? "Punto Cell · Canal oficial"}
           </p>
+
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
             {b.title}
           </h2>
@@ -103,20 +89,24 @@ export default function BannerCarousel() {
       </div>
 
       {/* prev/next */}
-      <button
-        onClick={() => setI((v) => (v - 1 + banners.length) % banners.length)}
-        className="absolute left-3 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-white"
-        aria-label="Anterior"
-      >
-        ‹
-      </button>
-      <button
-        onClick={() => setI((v) => (v + 1) % banners.length)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-white"
-        aria-label="Siguiente"
-      >
-        ›
-      </button>
+      {banners.length > 1 && (
+        <>
+          <button
+            onClick={() => setI((v) => (v - 1 + banners.length) % banners.length)}
+            className="absolute left-3 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-white"
+            aria-label="Anterior"
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => setI((v) => (v + 1) % banners.length)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-white"
+            aria-label="Siguiente"
+          >
+            ›
+          </button>
+        </>
+      )}
     </section>
   );
 }
