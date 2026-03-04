@@ -18,8 +18,8 @@ function isValidPhone(s: string) {
   return /^\d{8,15}$/.test(s);
 }
 
+// Conversaciones (tabla conversaciones)
 type Conversation = {
-  id_conversacion: number;
   telefono: string;
   cod_cliente: number | null;
   ultimo_mensaje: string | null;
@@ -27,19 +27,19 @@ type Conversation = {
   ultimo_at: string | null;
   unread_count: number;
   estado: string;
-  updated_at: string;
 };
 
-type ChatRow = {
+// Historial (union IN/OUT)
+type ChatMsg = {
   id: string;
   dir: "IN" | "OUT";
   telefono: string;
   texto: string | null;
-  tipo: string;
-  id_opcion: string | null;
-  titulo_opcion: string | null;
+  tipo: string | null;
+  id_opcion?: string | null;
+  titulo_opcion?: string | null;
   fecha: string;
-  estado_out: string | null;
+  estado_out?: string | null;
 };
 
 export default function CRMPage() {
@@ -90,9 +90,7 @@ export default function CRMPage() {
         return;
       }
 
-      setStatus(
-        `Preview OK: ${data.count_preview} fila(s) (de ${data.count_total}). Delimitador: ${data.delimiter}`
-      );
+      setStatus(`Preview OK: ${data.count_preview} fila(s) (de ${data.count_total}). Delimitador: ${data.delimiter}`);
       setLog([{ type: "preview", data }]);
     } catch (e: any) {
       setStatus("Error: " + (e?.message || "desconocido"));
@@ -153,9 +151,8 @@ export default function CRMPage() {
             continue;
           }
 
-          if (evt.type === "start") {
-            setTotal(evt.total ?? 0);
-          }
+          if (evt.type === "start") setTotal(evt.total ?? 0);
+
           if (evt.type === "item") {
             setLog((p) => [evt, ...p].slice(0, 200));
           }
@@ -174,11 +171,8 @@ export default function CRMPage() {
         }
       }
     } catch (e: any) {
-      if (String(e?.name) === "AbortError") {
-        setStatus("Envío cancelado.");
-      } else {
-        setStatus("Error: " + (e?.message || "desconocido"));
-      }
+      if (String(e?.name) === "AbortError") setStatus("Envío cancelado.");
+      else setStatus("Error: " + (e?.message || "desconocido"));
     } finally {
       setBusy(false);
       abortRef.current = null;
@@ -190,31 +184,24 @@ export default function CRMPage() {
   }
 
   // =========================
-  // Conversaciones + Chat (Inbox PRO)
+  // Conversaciones + Chat
   // =========================
-  const [convs, setConvs] = useState<Conversation[]>([]);
   const [convStatus, setConvStatus] = useState("");
-
-  const [selectedTel, setSelectedTel] = useState("");
+  const [convs, setConvs] = useState<Conversation[]>([]);
+  const [selectedPhone, setSelectedPhone] = useState<string>("");
   const [selectedCodCliente, setSelectedCodCliente] = useState<number | null>(null);
 
-  const [chat, setChat] = useState<ChatRow[]>([]);
   const [chatStatus, setChatStatus] = useState("");
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const endRef = useRef<HTMLDivElement | null>(null);
 
   async function loadConvs() {
     try {
       const res = await fetch("/api/crm/conversaciones?limit=50", { cache: "no-store" });
       const data = await res.json();
       if (!data?.ok) throw new Error(data?.error || "No se pudo cargar conversaciones");
-      const list = (data.rows || []) as Conversation[];
-      setConvs(list);
+      setConvs(data.rows || []);
       setConvStatus("");
-
-      // Auto-seleccionar primera conversación si no hay selección
-      if (!selectedTel && list?.[0]?.telefono) {
-        setSelectedTel(list[0].telefono);
-        setSelectedCodCliente(list[0].cod_cliente ?? null);
-      }
     } catch (e: any) {
       setConvStatus(e?.message || "Error cargando conversaciones");
     }
@@ -222,50 +209,63 @@ export default function CRMPage() {
 
   async function loadChat(telefono: string) {
     try {
+      setChatStatus("Cargando chat…");
       const res = await fetch(`/api/crm/historial?telefono=${encodeURIComponent(telefono)}&limit=200`, {
         cache: "no-store",
       });
       const data = await res.json();
       if (!data?.ok) throw new Error(data?.error || "No se pudo cargar historial");
-      setChat((data.rows || []) as ChatRow[]);
+      setChat(data.rows || []);
       setChatStatus("");
     } catch (e: any) {
       setChatStatus(e?.message || "Error cargando historial");
+      setChat([]);
     }
   }
 
-  async function markRead(telefono: string) {
+  // ✅ MEJORA #1: marcar leído al abrir conversación
+  async function marcarLeido(telefono: string) {
     try {
       await fetch("/api/crm/marcar_leido", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telefono }),
       });
-      // refrescar conversaciones para ver el badge bajar
-      loadConvs();
-    } catch {}
+    } catch {
+      // no cortamos UX si falla
+    }
   }
 
+  async function openConversation(c: Conversation) {
+    setSelectedPhone(c.telefono);
+    setSelectedCodCliente(c.cod_cliente ?? null);
+
+    // 1) cargar chat
+    await loadChat(c.telefono);
+
+    // 2) marcar leido + refrescar conversaciones (para que baje unread_count / NUEVO)
+    await marcarLeido(c.telefono);
+    await loadConvs();
+  }
+
+  // refresco automático (tipo inbox)
   useEffect(() => {
     loadConvs();
     const t = setInterval(loadConvs, 5000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ MEJORA #2: scroll automático al último mensaje
   useEffect(() => {
-    if (!selectedTel) return;
-    loadChat(selectedTel);
-    markRead(selectedTel);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTel]);
+    if (!chat?.length) return;
+    // scroll suave al final cuando cambia el historial
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chat]);
 
   // =========================
-  // Modal Responder
+  // Modal Responder (OUT)
   // =========================
   const [replyOpen, setReplyOpen] = useState(false);
-  const [replyTelefono, setReplyTelefono] = useState("");
-  const [replyCodCliente, setReplyCodCliente] = useState<number | null>(null);
   const [replyText, setReplyText] = useState("");
   const [replySaving, setReplySaving] = useState(false);
 
@@ -275,7 +275,7 @@ export default function CRMPage() {
   }
 
   async function sendReply() {
-    if (!replyTelefono) return alert("Falta teléfono");
+    if (!selectedPhone) return alert("Seleccioná una conversación");
     if (!replyText.trim()) return alert("Escribí un mensaje");
 
     setReplySaving(true);
@@ -284,21 +284,19 @@ export default function CRMPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          telefono: replyTelefono,
+          telefono: selectedPhone,
           mensaje: replyText.trim(),
-          cod_cliente: replyCodCliente,
+          cod_cliente: selectedCodCliente,
         }),
       });
       const data = await res.json();
       if (!data?.ok) throw new Error(data?.error || "No se pudo enviar");
 
-      alert("Mensaje enviado ✅");
       setReplyOpen(false);
+      setReplyText("");
 
-      // refrescar chat + sidebar
-      if (replyTelefono) {
-        await loadChat(replyTelefono);
-      }
+      // refrescar chat y conversaciones
+      await loadChat(selectedPhone);
       await loadConvs();
     } catch (e: any) {
       alert("Error: " + (e?.message || "desconocido"));
@@ -311,24 +309,9 @@ export default function CRMPage() {
   // Modal Agendar
   // =========================
   const [agendaOpen, setAgendaOpen] = useState(false);
-  const [agendaTelefono, setAgendaTelefono] = useState("");
-  const [agendaCodCliente, setAgendaCodCliente] = useState<number | null>(null);
   const [agendaFecha, setAgendaFecha] = useState("");
   const [agendaNota, setAgendaNota] = useState("");
   const [agendaSaving, setAgendaSaving] = useState(false);
-
-  function openAgendaFromChat() {
-    if (!selectedTel) return;
-    if (!selectedCodCliente) {
-      alert("Esta conversación no tiene cod_cliente asociado. Primero vinculá el teléfono a un cliente.");
-      return;
-    }
-    setAgendaTelefono(selectedTel);
-    setAgendaCodCliente(selectedCodCliente);
-    setAgendaFecha("");
-    setAgendaNota("");
-    setAgendaOpen(true);
-  }
 
   function closeAgenda() {
     if (agendaSaving) return;
@@ -336,7 +319,8 @@ export default function CRMPage() {
   }
 
   async function saveAgenda() {
-    if (!agendaCodCliente) return alert("Falta codCliente");
+    if (!selectedPhone) return alert("Seleccioná una conversación");
+    if (!selectedCodCliente) return alert("Sin cod_cliente asociado");
     if (!agendaFecha) return alert("Seleccioná una fecha");
 
     setAgendaSaving(true);
@@ -345,8 +329,8 @@ export default function CRMPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          codCliente: agendaCodCliente,
-          telefono: agendaTelefono,
+          codCliente: selectedCodCliente,
+          telefono: selectedPhone,
           fecha: agendaFecha, // YYYY-MM-DD
           nota: agendaNota,
         }),
@@ -354,16 +338,33 @@ export default function CRMPage() {
       const data = await res.json();
       if (!data?.ok) throw new Error(data?.error || "No se pudo agendar");
 
-      alert("Agendado ✅");
       setAgendaOpen(false);
+      setAgendaFecha("");
+      setAgendaNota("");
 
-      // refrescar conversaciones por si querés ver estado luego
-      loadConvs();
+      await loadConvs();
     } catch (e: any) {
       alert("Error: " + (e?.message || "desconocido"));
     } finally {
       setAgendaSaving(false);
     }
+  }
+
+  // =========================
+  // UI helpers
+  // =========================
+  function fmtDate(v?: string | null) {
+    if (!v) return "";
+    const d = new Date(v);
+    return d.toLocaleString();
+  }
+
+  // ✅ MEJORA #3: burbujas IN/OUT (tailwind)
+  function bubbleClass(dir: "IN" | "OUT") {
+    if (dir === "OUT") {
+      return "ml-auto bg-emerald-100 text-emerald-950 border-emerald-200";
+    }
+    return "mr-auto bg-slate-100 text-slate-900 border-slate-200";
   }
 
   // =========================
@@ -518,101 +519,6 @@ export default function CRMPage() {
           </div>
         </div>
 
-        {/* Preview Tabla */}
-        {!!rows.length && (
-          <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-900">Previsualización local</h2>
-              <span className="text-xs text-slate-500">Primeras 5 filas</span>
-            </div>
-
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-slate-500">
-                    <th className="py-2 pr-3">#</th>
-                    <th className="py-2 pr-3">phone</th>
-                    <th className="py-2 pr-3">cliente</th>
-                    <th className="py-2 pr-3">saldo</th>
-                    <th className="py-2 pr-3">val</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.map((r, i) => {
-                    const ok = isValidPhone(r.phone) && r.cliente && r.saldo;
-                    return (
-                      <tr key={i} className="border-b last:border-0">
-                        <td className="py-2 pr-3 text-slate-600">{i + 1}</td>
-                        <td className="py-2 pr-3 font-mono">{r.phone}</td>
-                        <td className="py-2 pr-3">{r.cliente}</td>
-                        <td className="py-2 pr-3 font-mono">{r.saldo}</td>
-                        <td className="py-2 pr-3">
-                          <span
-                            className={`rounded-full px-2 py-1 text-xs ${
-                              ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-                            }`}
-                          >
-                            {ok ? "OK" : "INV"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {invalidCount > 0 && <div className="mt-3 text-xs text-red-700">Hay filas inválidas.</div>}
-          </div>
-        )}
-
-        {/* Logs */}
-        {!!log.length && (
-          <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-900">Logs (últimos eventos)</h2>
-              <span className="text-xs text-slate-500">Se muestran los más recientes</span>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              {log.map((evt, idx) => (
-                <div
-                  key={idx}
-                  className={`rounded-xl border p-3 text-sm ${
-                    evt.type === "item" && evt.ok
-                      ? "border-emerald-200 bg-emerald-50"
-                      : evt.type === "item" && !evt.ok
-                      ? "border-red-200 bg-red-50"
-                      : "border-slate-200 bg-slate-50"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-mono text-xs text-slate-700">
-                      {evt.type}
-                      {evt.i ? ` #${evt.i}` : ""} {evt.phone ? `→ ${evt.phone}` : ""}
-                    </div>
-                    {evt.type === "item" && (
-                      <span
-                        className={`rounded-full px-2 py-1 text-xs ${
-                          evt.ok ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {evt.ok ? "ENVIADO" : "ERROR"}
-                      </span>
-                    )}
-                  </div>
-
-                  {evt.cliente && <div className="mt-1 text-slate-800">{evt.cliente}</div>}
-                  {evt.messageId && (
-                    <div className="mt-1 font-mono text-xs text-slate-700">messageId: {evt.messageId}</div>
-                  )}
-                  {evt.error && <div className="mt-1 text-xs text-red-800">{evt.error}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Conversaciones + Chat */}
         <div className="mt-8 rounded-2xl border bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
@@ -621,10 +527,7 @@ export default function CRMPage() {
               <p className="mt-1 text-xs text-slate-500">Se refresca cada 5 segundos.</p>
             </div>
             <button
-              onClick={() => {
-                loadConvs();
-                if (selectedTel) loadChat(selectedTel);
-              }}
+              onClick={loadConvs}
               className="rounded-xl border px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
             >
               Refrescar
@@ -634,132 +537,130 @@ export default function CRMPage() {
           {convStatus && <div className="mt-3 text-xs text-red-600">{convStatus}</div>}
 
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            {/* Sidebar */}
-            <div className="md:col-span-1 space-y-2">
-              {!convs.length ? (
-                <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Sin conversaciones.</div>
-              ) : (
-                convs.map((c) => {
-                  const active = c.telefono === selectedTel;
-                  return (
-                    <button
-                      key={c.id_conversacion}
-                      onClick={() => {
-                        setSelectedTel(c.telefono);
-                        setSelectedCodCliente(c.cod_cliente ?? null);
-                      }}
-                      className={`w-full rounded-xl border p-3 text-left ${
-                        active ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs text-slate-600">
-                          <span className="font-mono">{c.telefono}</span>
-                          {c.cod_cliente ? <span className="ml-2">• {c.cod_cliente}</span> : null}
+            {/* Lista */}
+            <div className="md:col-span-1">
+              <div className="rounded-xl bg-slate-50 p-2">
+                {!convs.length && <div className="p-3 text-sm text-slate-600">Sin conversaciones.</div>}
+
+                <div className="space-y-2">
+                  {convs.map((c) => {
+                    const active = selectedPhone === c.telefono;
+                    return (
+                      <button
+                        key={c.telefono}
+                        onClick={() => openConversation(c)}
+                        className={`w-full rounded-xl border p-3 text-left transition ${
+                          active ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-mono text-sm text-slate-900">{c.telefono}</div>
+                          <div className="text-[11px] text-slate-500">{fmtDate(c.ultimo_at)}</div>
                         </div>
 
-                        {c.unread_count > 0 && (
-                          <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white">
-                            {c.unread_count}
-                          </span>
-                        )}
-                      </div>
+                        <div className="mt-1 line-clamp-2 text-xs text-slate-700">
+                          {c.ultimo_mensaje || <span className="text-slate-400">(sin mensaje)</span>}
+                        </div>
 
-                      <div className="mt-1 text-xs text-slate-600 line-clamp-2">
-                        {c.ultimo_mensaje || <span className="text-slate-400">(sin mensaje)</span>}
-                      </div>
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="text-[11px] text-slate-500">{c.estado}</div>
 
-                      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5">{c.estado}</span>
-                        <span>
-                          {(c.ultimo_at || c.updated_at)
-                            ? new Date(c.ultimo_at || c.updated_at).toLocaleString()
-                            : ""}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
+                          {/* indicador NUEVO */}
+                          {c.unread_count > 0 && (
+                            <span className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                              NUEVO
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             {/* Chat */}
             <div className="md:col-span-2">
-              <div className="rounded-2xl border bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
+              <div className="rounded-xl border bg-white">
+                <div className="flex items-center justify-between gap-3 border-b p-3">
                   <div>
-                    <div className="text-xs text-slate-600">Chat</div>
-                    <div className="mt-1 font-mono text-sm text-slate-900">
-                      {selectedTel || "Seleccioná una conversación"}
+                    <div className="text-xs text-slate-500">Chat</div>
+                    <div className="font-mono text-sm text-slate-900">{selectedPhone || "Seleccioná una conversación"}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {selectedCodCliente ? `cod_cliente: ${selectedCodCliente}` : "Sin cod_cliente asociado"}
                     </div>
-                    {selectedCodCliente ? (
-                      <div className="mt-1 text-xs text-slate-500">cod_cliente: {selectedCodCliente}</div>
-                    ) : (
-                      <div className="mt-1 text-xs text-slate-500">Sin cod_cliente asociado</div>
-                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => {
-                        if (!selectedTel) return;
-                        setReplyTelefono(selectedTel);
-                        setReplyCodCliente(selectedCodCliente);
+                        if (!selectedPhone) return alert("Seleccioná una conversación");
                         setReplyText("");
                         setReplyOpen(true);
                       }}
-                      disabled={!selectedTel}
                       className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      disabled={!selectedPhone}
                     >
                       Responder
                     </button>
 
                     <button
-                      onClick={openAgendaFromChat}
-                      disabled={!selectedTel}
+                      onClick={() => {
+                        if (!selectedPhone) return alert("Seleccioná una conversación");
+                        if (!selectedCodCliente) return alert("Sin cod_cliente asociado");
+                        setAgendaFecha("");
+                        setAgendaNota("");
+                        setAgendaOpen(true);
+                      }}
                       className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      disabled={!selectedPhone}
                     >
                       Agendar
                     </button>
                   </div>
                 </div>
 
-                {chatStatus && <div className="mt-3 text-xs text-red-600">{chatStatus}</div>}
-
-                <div className="mt-4 max-h-[520px] overflow-y-auto space-y-2 pr-1">
-                  {!selectedTel ? (
-                    <div className="rounded-xl bg-white p-4 text-sm text-slate-600">
+                <div
+                  className="h-[360px] overflow-y-auto p-3"
+                  id="chatbox"
+                >
+                  {!selectedPhone && (
+                    <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
                       Elegí una conversación a la izquierda.
                     </div>
-                  ) : !chat.length ? (
-                    <div className="rounded-xl bg-white p-4 text-sm text-slate-600">Sin historial.</div>
-                  ) : (
-                    chat.map((m) => {
-                      const isIn = m.dir === "IN";
-                      return (
-                        <div key={m.id} className={`flex ${isIn ? "justify-start" : "justify-end"}`}>
-                          <div
-                            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-                              isIn ? "bg-white border" : "bg-blue-600 text-white"
-                            }`}
-                          >
-                            <div className="whitespace-pre-wrap">{m.texto || "(sin contenido)"}</div>
-
-                            {isIn && m.tipo && m.tipo !== "texto" && (
-                              <div className="mt-1 text-[11px] text-slate-500">
-                                tipo: {m.tipo}
-                                {m.titulo_opcion ? ` • ${m.titulo_opcion}` : ""}
-                              </div>
-                            )}
-
-                            <div className={`mt-1 text-[11px] ${isIn ? "text-slate-500" : "text-blue-100"}`}>
-                              {new Date(m.fecha).toLocaleString()} {!isIn && m.estado_out ? `• ${m.estado_out}` : ""}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
                   )}
+
+                  {selectedPhone && chatStatus && (
+                    <div className="text-xs text-slate-500">{chatStatus}</div>
+                  )}
+
+                  {selectedPhone && !chatStatus && !chat.length && (
+                    <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                      Sin mensajes todavía.
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {chat.map((m) => (
+                      <div key={m.id} className={`max-w-[75%] rounded-2xl border px-3 py-2 ${bubbleClass(m.dir)}`}>
+                        <div className="text-sm whitespace-pre-wrap break-words">
+                          {m.texto || <span className="text-slate-500">(sin texto)</span>}
+                        </div>
+
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] opacity-70">
+                          <span className="font-mono">{m.dir}</span>
+                          <span>{fmtDate(m.fecha)}</span>
+                        </div>
+
+                        {m.dir === "OUT" && m.estado_out && (
+                          <div className="mt-1 text-[11px] opacity-70">estado: {m.estado_out}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ancla para scroll automático */}
+                  <div ref={endRef} />
                 </div>
               </div>
             </div>
@@ -773,7 +674,7 @@ export default function CRMPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Responder</div>
-                  <div className="mt-1 text-xs text-slate-500 font-mono">{replyTelefono}</div>
+                  <div className="mt-1 text-xs text-slate-500 font-mono">{selectedPhone}</div>
                 </div>
                 <button onClick={closeReply} className="rounded-lg border px-2 py-1 text-xs" disabled={replySaving}>
                   Cerrar
@@ -816,7 +717,7 @@ export default function CRMPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Agendar pago</div>
-                  <div className="mt-1 text-xs text-slate-500 font-mono">{agendaTelefono}</div>
+                  <div className="mt-1 text-xs text-slate-500 font-mono">{selectedPhone}</div>
                 </div>
                 <button onClick={closeAgenda} className="rounded-lg border px-2 py-1 text-xs" disabled={agendaSaving}>
                   Cerrar
