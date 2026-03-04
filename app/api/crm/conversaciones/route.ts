@@ -4,17 +4,14 @@ import { dbQuery } from "@/lib/db";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-
   try {
-
     const { searchParams } = new URL(req.url);
 
     const limitRaw = searchParams.get("limit") || "50";
-    const limit = parseInt(limitRaw, 10) || 50;
+    const parsed = parseInt(limitRaw, 10);
+    const safeLimit = Number.isFinite(parsed) ? Math.max(1, Math.min(200, parsed)) : 50;
 
-    // seguridad
-    const safeLimit = Math.max(1, Math.min(200, limit));
-
+    // IMPORTANTe: LIMIT sin placeholder (evita mysql_stmt_execute error)
     const sql = `
       SELECT
         telefono,
@@ -26,25 +23,14 @@ export async function GET(req: Request) {
         estado
       FROM conversaciones
       ORDER BY ultimo_at DESC
-      LIMIT ?
+      LIMIT ${safeLimit}
     `;
 
-    const rows = await dbQuery(sql, [safeLimit]);
+    const rows = await dbQuery(sql); // sin params
 
-    return NextResponse.json({
-      ok: true,
-      rows
-    });
-
-  } catch (error: any) {
-
-    console.error("Error conversaciones:", error);
-
-    return NextResponse.json({
-      ok: false,
-      error: error.message
-    }, { status: 500 });
-
+    return NextResponse.json({ ok: true, rows });
+  } catch (e: any) {
+    console.error("Error /crm/conversaciones:", e);
+    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
-
 }

@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { dbQuery } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
+
     const telefono = String(searchParams.get("telefono") || "").trim();
-    const limit = Math.max(1, Math.min(500, Number(searchParams.get("limit") || 200)));
+    const limitRaw = searchParams.get("limit") || "200";
+    const parsed = parseInt(limitRaw, 10);
+    const limit = Number.isFinite(parsed) ? Math.max(1, Math.min(500, parsed)) : 200;
 
     if (!telefono) {
       return NextResponse.json({ ok: false, error: "Falta telefono" }, { status: 400 });
     }
 
+    // IMPORTANTE: LIMIT sin placeholder para evitar mysqld_stmt_execute
     const sql = `
       (
         SELECT 
@@ -44,12 +48,15 @@ export async function GET(req: Request) {
         WHERE ew.telefono = ?
       )
       ORDER BY fecha ASC
-      LIMIT ?
+      LIMIT ${limit}
     `;
 
-    const [rows] = await pool.execute(sql, [telefono, telefono, limit]);
+    // Parametrizamos SOLO telefono, telefono. LIMIT va inline.
+    const rows = await dbQuery(sql, [telefono, telefono]);
+
     return NextResponse.json({ ok: true, rows });
   } catch (e: any) {
+    console.error("Error /crm/historial:", e);
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
 }
