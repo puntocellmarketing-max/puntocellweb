@@ -14,9 +14,11 @@ type QueueRow = RowDataPacket & {
   telefono: string;
   plantilla: string;
   idioma: string | null;
+  cliente: string | null;
+  saldo: number | null;
 };
 
-function safeInt(value: any, fallback: number, min: number, max: number) {
+function safeInt(value: unknown, fallback: number, min: number, max: number) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(n)));
@@ -29,10 +31,11 @@ async function sendTemplateMessage(params: {
   to: string;
   templateName: string;
   languageCode: string;
+  bodyParameters?: string[];
 }) {
   const url = `https://graph.facebook.com/${params.apiVersion}/${params.phoneNumberId}/messages`;
 
-  const payload = {
+  const payload: any = {
     messaging_product: "whatsapp",
     to: params.to,
     type: "template",
@@ -43,6 +46,18 @@ async function sendTemplateMessage(params: {
       },
     },
   };
+
+  if (params.bodyParameters?.length) {
+    payload.template.components = [
+      {
+        type: "body",
+        parameters: params.bodyParameters.map((value) => ({
+          type: "text",
+          text: String(value ?? ""),
+        })),
+      },
+    ];
+  }
 
   const res = await fetch(url, {
     method: "POST",
@@ -78,18 +93,18 @@ export async function POST(req: Request) {
   let conn: PoolConnection | null = null;
 
   try {
-          const token =
-            process.env.WHATSAPP_CLOUD_API_TOKEN ||
-            process.env.WHATSAPP_TOKEN ||
-            "";
+    const token =
+      process.env.WHATSAPP_CLOUD_API_TOKEN ||
+      process.env.WHATSAPP_TOKEN ||
+      "";
 
-          const phoneNumberId =
-            process.env.WHATSAPP_PHONE_NUMBER_ID ||
-            "";
+    const phoneNumberId =
+      process.env.WHATSAPP_PHONE_NUMBER_ID ||
+      "";
 
-          const apiVersion =
-            process.env.WHATSAPP_API_VERSION ||
-            "v22.0";
+    const apiVersion =
+      process.env.WHATSAPP_API_VERSION ||
+      "v22.0";
 
     if (!token || !phoneNumberId) {
       return NextResponse.json(
@@ -105,7 +120,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as ExecuteQueuePayload;
 
     const idCampania = Number(body?.idCampania ?? 0);
-    const limit = safeInt(body?.limit ?? 5, 5, 1, 100);
+    const limit = safeInt(body?.limit ?? 50, 50, 1, 500);
 
     if (!Number.isFinite(idCampania) || idCampania <= 0) {
       return NextResponse.json(
@@ -120,14 +135,18 @@ export async function POST(req: Request) {
     const [rows] = await conn.query<QueueRow[]>(
       `
       SELECT
-        id_envio,
-        telefono,
-        plantilla,
-        idioma
-      FROM envios_whatsapp
-      WHERE id_campania = ?
-        AND estado = 'QUEUED'
-      ORDER BY id_envio ASC
+        ew.id_envio,
+        ew.telefono,
+        ew.plantilla,
+        ew.idioma,
+        ad.cliente,
+        ad.saldo
+      FROM envios_whatsapp ew
+      LEFT JOIN crm_audiencia_detalle ad
+        ON ad.id_detalle = ew.id_audiencia_detalle
+      WHERE ew.id_campania = ?
+        AND ew.estado = 'QUEUED'
+      ORDER BY ew.id_envio ASC
       LIMIT ?
       `,
       [idCampania, limit]
@@ -146,7 +165,13 @@ export async function POST(req: Request) {
 
     let sentCount = 0;
     let failCount = 0;
-    const details: any[] = [];
+    const details: Array<{
+      idEnvio: number;
+      telefono: string;
+      status: "SENT" | "FAILED";
+      messageId?: string | null;
+      error?: string;
+    }> = [];
 
     for (const row of rows) {
       try {
@@ -159,6 +184,10 @@ export async function POST(req: Request) {
           [row.id_envio]
         );
 
+        const nombreCliente = (row.cliente || "Cliente").trim();
+        const primerNombre = nombreCliente.split(" ")[0] || "Cliente";
+        const saldoTexto = Math.round(Number(row.saldo ?? 0)).toLocaleString("es-PY");
+
         const result = await sendTemplateMessage({
           token,
           phoneNumberId,
@@ -166,6 +195,7 @@ export async function POST(req: Request) {
           to: row.telefono,
           templateName: row.plantilla,
           languageCode: row.idioma || "es",
+          bodyParameters: [primerNombre, saldoTexto],
         });
 
         await conn.execute(
@@ -188,7 +218,12 @@ export async function POST(req: Request) {
           status: "SENT",
           messageId: result.messageId,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : "Error desconocido";
+
         await conn.execute(
           `
           UPDATE envios_whatsapp
@@ -199,7 +234,7 @@ export async function POST(req: Request) {
             intentos = COALESCE(intentos, 0) + 1
           WHERE id_envio = ?
           `,
-          [err?.message || "Error desconocido", row.id_envio]
+          [message, row.id_envio]
         );
 
         failCount++;
@@ -207,7 +242,7 @@ export async function POST(req: Request) {
           idEnvio: row.id_envio,
           telefono: row.telefono,
           status: "FAILED",
-          error: err?.message || "Error desconocido",
+          error: message,
         });
       }
     }
@@ -239,13 +274,16 @@ export async function POST(req: Request) {
       },
       details,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     try {
       if (conn) await conn.rollback();
     } catch {}
 
+    const message =
+      e instanceof Error && e.message ? e.message : "Error interno del servidor";
+
     return NextResponse.json(
-      { ok: false, error: e?.message || String(e) },
+      { ok: false, error: message },
       { status: 500 }
     );
   } finally {
