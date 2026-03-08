@@ -25,11 +25,32 @@ type ChatMsg = {
   estado_out?: string | null;
 };
 
+const ESTADOS_GESTION = [
+  "TODOS",
+  "NUEVO",
+  "EN_GESTION",
+  "PROMESA",
+  "PAGADO",
+  "NO_RESPONDE",
+  "ERRONEO",
+] as const;
+
 function formatDate(value?: string | null) {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleString("es-PY");
+}
+
+function formatDateShort(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("es-PY", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
 }
 
 function bubbleClass(dir: "IN" | "OUT") {
@@ -58,11 +79,34 @@ function estadoBadgeClasses(estado: string) {
   }
 }
 
+function outStatusBadgeClasses(status?: string | null) {
+  switch (status) {
+    case "SENT":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "DELIVERED":
+      return "bg-blue-50 text-blue-700 border-blue-200";
+    case "READ":
+      return "bg-violet-50 text-violet-700 border-violet-200";
+    case "FAILED":
+      return "bg-red-50 text-red-700 border-red-200";
+    case "SENDING":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    default:
+      return "bg-slate-100 text-slate-700 border-slate-200";
+  }
+}
+
+function getConversationName(c: Conversation) {
+  if (c.cod_cliente) return `Cliente #${c.cod_cliente}`;
+  return "Sin cliente asociado";
+}
+
 export default function CRMConversationsPage() {
   const [convStatus, setConvStatus] = useState("");
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string>("");
   const [selectedCodCliente, setSelectedCodCliente] = useState<number | null>(null);
+  const [selectedEstado, setSelectedEstado] = useState<string>("");
 
   const [chatStatus, setChatStatus] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
@@ -71,6 +115,8 @@ export default function CRMConversationsPage() {
   const [replySaving, setReplySaving] = useState(false);
 
   const [search, setSearch] = useState("");
+  const [estadoFilter, setEstadoFilter] = useState<string>("TODOS");
+  const [onlyUnread, setOnlyUnread] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -78,16 +124,27 @@ export default function CRMConversationsPage() {
   async function loadConvs() {
     try {
       setRefreshing(true);
-      const res = await fetch("/api/crm/conversaciones?limit=100", {
+      const res = await fetch("/api/crm/conversaciones?limit=150", {
         cache: "no-store",
       });
+
       const data = await res.json();
 
       if (!data?.ok) {
         throw new Error(data?.error || "No se pudo cargar conversaciones");
       }
 
-      setConvs(data.rows || []);
+      const rows = data.rows || [];
+      setConvs(rows);
+
+      if (selectedPhone) {
+        const current = rows.find((r: Conversation) => r.telefono === selectedPhone);
+        if (current) {
+          setSelectedCodCliente(current.cod_cliente ?? null);
+          setSelectedEstado(current.estado ?? "");
+        }
+      }
+
       setConvStatus("");
     } catch (e: any) {
       setConvStatus(e?.message || "Error cargando conversaciones");
@@ -100,11 +157,10 @@ export default function CRMConversationsPage() {
     try {
       setChatStatus("Cargando historial...");
       const res = await fetch(
-        `/api/crm/historial?telefono=${encodeURIComponent(telefono)}&limit=200`,
-        {
-          cache: "no-store",
-        }
+        `/api/crm/historial?telefono=${encodeURIComponent(telefono)}&limit=300`,
+        { cache: "no-store" }
       );
+
       const data = await res.json();
 
       if (!data?.ok) {
@@ -129,13 +185,14 @@ export default function CRMConversationsPage() {
         body: JSON.stringify({ telefono }),
       });
     } catch {
-      // No interrumpimos la UX si falla
+      // no bloquea UX
     }
   }
 
   async function openConversation(c: Conversation) {
     setSelectedPhone(c.telefono);
     setSelectedCodCliente(c.cod_cliente ?? null);
+    setSelectedEstado(c.estado ?? "");
 
     await loadChat(c.telefono);
     await marcarLeido(c.telefono);
@@ -173,9 +230,10 @@ export default function CRMConversationsPage() {
         }),
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : {};
 
-      if (!data?.ok) {
+      if (!res.ok || !data?.ok) {
         throw new Error(data?.error || "No se pudo enviar la respuesta.");
       }
 
@@ -204,22 +262,32 @@ export default function CRMConversationsPage() {
 
   const filteredConvs = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return convs;
 
     return convs.filter((c) => {
-      return (
+      const passesSearch =
+        !q ||
         String(c.telefono || "").toLowerCase().includes(q) ||
         String(c.ultimo_mensaje || "").toLowerCase().includes(q) ||
         String(c.cod_cliente || "").toLowerCase().includes(q) ||
-        String(c.estado || "").toLowerCase().includes(q)
-      );
+        String(c.estado || "").toLowerCase().includes(q);
+
+      const passesEstado =
+        estadoFilter === "TODOS" || c.estado === estadoFilter;
+
+      const passesUnread = !onlyUnread || Number(c.unread_count || 0) > 0;
+
+      return passesSearch && passesEstado && passesUnread;
     });
-  }, [convs, search]);
+  }, [convs, search, estadoFilter, onlyUnread]);
+
+  const selectedConversation = useMemo(() => {
+    return convs.find((c) => c.telefono === selectedPhone) || null;
+  }, [convs, selectedPhone]);
 
   const stats = useMemo(() => {
     return {
       total: convs.length,
-      nuevos: convs.filter((c) => c.unread_count > 0).length,
+      nuevos: convs.filter((c) => Number(c.unread_count || 0) > 0).length,
       promesas: convs.filter((c) => c.estado === "PROMESA").length,
       pagados: convs.filter((c) => c.estado === "PAGADO").length,
     };
@@ -232,7 +300,7 @@ export default function CRMConversationsPage() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="mb-3 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                CRM / Inbox
+                CRM / Inbox profesional
               </div>
 
               <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
@@ -240,9 +308,9 @@ export default function CRMConversationsPage() {
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-                Desde acá podés ver mensajes entrantes y salientes, revisar el
-                historial por teléfono, responder desde el sistema y hacer
-                seguimiento operativo de cobranza.
+                Gestioná respuestas, seguimiento de cobranza y conversaciones activas
+                desde una sola vista operativa. Esta pantalla centraliza mensajes
+                entrantes, salientes y acción manual del equipo.
               </p>
             </div>
 
@@ -304,18 +372,50 @@ export default function CRMConversationsPage() {
         </section>
 
         <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="grid gap-1 text-sm">
-            <label htmlFor="searchInbox" className="text-slate-700">
-              Buscar en conversaciones
-            </label>
-            <input
-              id="searchInbox"
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por teléfono, mensaje, estado o cod_cliente..."
-              className="rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-500"
-            />
+          <div className="grid gap-4 lg:grid-cols-[1.4fr_220px_180px]">
+            <div className="grid gap-1 text-sm">
+              <label htmlFor="searchInbox" className="text-slate-700">
+                Buscar en conversaciones
+              </label>
+              <input
+                id="searchInbox"
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por teléfono, mensaje, estado o cod_cliente..."
+                className="rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-500"
+              />
+            </div>
+
+            <div className="grid gap-1 text-sm">
+              <label htmlFor="estadoFilter" className="text-slate-700">
+                Estado de gestión
+              </label>
+              <select
+                id="estadoFilter"
+                value={estadoFilter}
+                onChange={(e) => setEstadoFilter(e.target.value)}
+                className="rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-500"
+              >
+                {ESTADOS_GESTION.map((estado) => (
+                  <option key={estado} value={estado}>
+                    {estado}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-end">
+              <label className="inline-flex w-full cursor-pointer items-center gap-3 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={onlyUnread}
+                  onChange={(e) => setOnlyUnread(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Solo no leídos
+              </label>
+            </div>
           </div>
         </section>
 
@@ -325,21 +425,21 @@ export default function CRMConversationsPage() {
           </div>
         ) : null}
 
-        <section className="mt-6 grid gap-6 lg:grid-cols-[380px_1fr]">
+        <section className="mt-6 grid gap-6 lg:grid-cols-[390px_1fr]">
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-900">
-                Lista de conversaciones
+                Bandeja de conversaciones
               </h2>
               <span className="text-xs text-slate-500">
                 {filteredConvs.length} resultado(s)
               </span>
             </div>
 
-            <div className="max-h-[720px] space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-[760px] space-y-3 overflow-y-auto pr-1">
               {filteredConvs.length === 0 ? (
                 <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  No hay conversaciones para mostrar.
+                  No hay conversaciones para mostrar con esos filtros.
                 </div>
               ) : (
                 filteredConvs.map((c) => {
@@ -355,20 +455,23 @@ export default function CRMConversationsPage() {
                           : "border-slate-200 bg-white hover:bg-slate-50"
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-mono text-sm text-slate-900">
-                          {c.telefono}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-mono text-sm font-semibold text-slate-900">
+                            {c.telefono}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {getConversationName(c)}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-500">
-                          {formatDate(c.ultimo_at)}
+
+                        <div className="text-right text-[11px] text-slate-500">
+                          <div>{formatDateShort(c.ultimo_at)}</div>
+                          <div className="mt-1">{formatDate(c.ultimo_at).split(",")[1] || ""}</div>
                         </div>
                       </div>
 
-                      <div className="mt-1 text-xs text-slate-500">
-                        {c.cod_cliente ? `cod_cliente: ${c.cod_cliente}` : "Sin cod_cliente"}
-                      </div>
-
-                      <div className="mt-2 line-clamp-2 text-sm text-slate-700">
+                      <div className="mt-3 line-clamp-2 min-h-[40px] text-sm text-slate-700">
                         {c.ultimo_mensaje || (
                           <span className="text-slate-400">(sin mensaje)</span>
                         )}
@@ -383,7 +486,13 @@ export default function CRMConversationsPage() {
                           {c.estado}
                         </span>
 
-                        {c.unread_count > 0 ? (
+                        {c.ultimo_tipo ? (
+                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                            {c.ultimo_tipo}
+                          </span>
+                        ) : null}
+
+                        {Number(c.unread_count || 0) > 0 ? (
                           <span className="inline-flex items-center rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
                             NUEVO ({c.unread_count})
                           </span>
@@ -397,18 +506,39 @@ export default function CRMConversationsPage() {
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+            <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">
                   Conversación seleccionada
                 </div>
-                <div className="mt-1 font-mono text-lg font-semibold text-slate-900">
+                <div className="mt-1 font-mono text-xl font-semibold text-slate-900">
                   {selectedPhone || "Seleccioná una conversación"}
                 </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {selectedCodCliente
-                    ? `cod_cliente: ${selectedCodCliente}`
-                    : "Sin cod_cliente asociado"}
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                    {selectedCodCliente ? `cod_cliente: ${selectedCodCliente}` : "Sin cod_cliente"}
+                  </span>
+
+                  {selectedEstado ? (
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${estadoBadgeClasses(
+                        selectedEstado
+                      )}`}
+                    >
+                      {selectedEstado}
+                    </span>
+                  ) : null}
+
+                  {selectedConversation?.unread_count ? (
+                    <span className="inline-flex items-center rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
+                      {selectedConversation.unread_count} no leído(s)
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-2 text-sm text-slate-500">
+                  Último movimiento: {formatDate(selectedConversation?.ultimo_at || null)}
                 </div>
               </div>
 
@@ -438,13 +568,22 @@ export default function CRMConversationsPage() {
                 >
                   Recargar chat
                 </button>
+
+                <Link
+                  href={`/crm/agendar?telefono=${encodeURIComponent(selectedPhone || "")}`}
+                  className={`inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50 ${
+                    !selectedPhone ? "pointer-events-none opacity-50" : ""
+                  }`}
+                >
+                  Agendar
+                </Link>
               </div>
             </div>
 
-            <div className="mt-4 h-[620px] overflow-y-auto rounded-2xl bg-slate-50 p-4">
+            <div className="mt-4 h-[680px] overflow-y-auto rounded-2xl bg-slate-50 p-4">
               {!selectedPhone ? (
                 <div className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-                  Elegí una conversación de la izquierda para ver el historial.
+                  Elegí una conversación de la izquierda para ver el historial completo.
                 </div>
               ) : chatStatus ? (
                 <div className="rounded-2xl bg-white p-5 text-sm text-slate-600">
@@ -459,26 +598,46 @@ export default function CRMConversationsPage() {
                   {chat.map((m) => (
                     <div
                       key={m.id}
-                      className={`max-w-[78%] rounded-2xl border px-4 py-3 ${bubbleClass(
+                      className={`max-w-[82%] rounded-2xl border px-4 py-3 ${bubbleClass(
                         m.dir
                       )}`}
                     >
-                      <div className="whitespace-pre-wrap break-words text-sm">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[11px] opacity-75">{m.dir}</span>
+
+                        {m.dir === "OUT" && m.estado_out ? (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${outStatusBadgeClasses(
+                              m.estado_out
+                            )}`}
+                          >
+                            {m.estado_out}
+                          </span>
+                        ) : null}
+
+                        {m.tipo ? (
+                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                            tipo: {m.tipo}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="whitespace-pre-wrap break-words text-sm leading-6">
                         {m.texto || (
                           <span className="text-slate-500">(sin texto)</span>
                         )}
                       </div>
 
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] opacity-75">
-                        <span className="font-mono">{m.dir}</span>
-                        <span>{formatDate(m.fecha)}</span>
-                      </div>
-
-                      {m.dir === "OUT" && m.estado_out ? (
-                        <div className="mt-1 text-[11px] opacity-75">
-                          estado: {m.estado_out}
+                      {(m.titulo_opcion || m.id_opcion) && (
+                        <div className="mt-2 rounded-xl bg-white/60 p-2 text-[11px] text-slate-700">
+                          {m.titulo_opcion ? <div>opción: {m.titulo_opcion}</div> : null}
+                          {m.id_opcion ? <div>id: {m.id_opcion}</div> : null}
                         </div>
-                      ) : null}
+                      )}
+
+                      <div className="mt-3 text-right text-[11px] opacity-75">
+                        {formatDate(m.fecha)}
+                      </div>
                     </div>
                   ))}
                   <div ref={endRef} />
@@ -490,7 +649,7 @@ export default function CRMConversationsPage() {
 
         {replyOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-xl">
+            <div className="w-full max-w-2xl rounded-3xl bg-white p-5 shadow-xl">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-lg font-semibold text-slate-900">
@@ -510,16 +669,14 @@ export default function CRMConversationsPage() {
                 </button>
               </div>
 
-              <div className="mt-5">
-                <label className="mb-2 block text-sm text-slate-700">
-                  Mensaje
-                </label>
+              <div className="mt-5 grid gap-1">
+                <label className="text-sm text-slate-700">Mensaje</label>
                 <textarea
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
-                  rows={6}
+                  rows={7}
                   className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500"
-                  placeholder="Escribí tu respuesta..."
+                  placeholder="Escribí una respuesta clara para el cliente..."
                 />
               </div>
 
