@@ -1,148 +1,387 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { pool } from "@/lib/db";
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
-const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "";
+export const runtime = "nodejs";
 
-/**
- * Extrae texto “humano” de distintos tipos de mensaje
- */
-function pickText(msg: any): string | null {
-  if (!msg) return null;
+type ConversationRow = RowDataPacket & {
+  telefono: string;
+};
 
-  if (msg.type === "text") return msg.text?.body ?? null;
-  if (msg.type === "button") return msg.button?.text ?? null;
+function normalizePhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const cleaned = String(phone).replace(/[^\d]/g, "");
+  return cleaned || null;
+}
 
-  // interactive -> puede ser list_reply o button_reply
-  if (msg.type === "interactive") {
-    const i = msg.interactive;
-    const t = i?.type;
-    if (t === "button_reply") return i?.button_reply?.title ?? null;
-    if (t === "list_reply") return i?.list_reply?.title ?? null;
+async function insertEvento(
+  conn: PoolConnection,
+  tipoEvento: string,
+  payload: unknown,
+  idMensajeWhatsapp?: string | null,
+  telefono?: string | null
+) {
+  await conn.execute(
+    `
+    INSERT INTO eventos_whatsapp (
+      tipo_evento,
+      id_mensaje_whatsapp,
+      telefono,
+      payload,
+      fecha_creacion
+    ) VALUES (?, ?, ?, ?, NOW())
+    `,
+    [
+      tipoEvento,
+      idMensajeWhatsapp ?? null,
+      telefono ?? null,
+      JSON.stringify(payload),
+    ]
+  );
+}
+
+async function upsertConversation(params: {
+  conn: PoolConnection;
+  telefono: string;
+  codCliente?: number | null;
+  ultimoMensaje: string | null;
+  ultimoTipo: "IN" | "OUT";
+  ultimoAt?: string | null;
+  incrementarUnread?: boolean;
+}) {
+  const {
+    conn,
+    telefono,
+    codCliente = null,
+    ultimoMensaje,
+    ultimoTipo,
+    ultimoAt = null,
+    incrementarUnread = false,
+  } = params;
+
+  await conn.execute(
+    `
+    INSERT INTO conversaciones (
+      telefono,
+      cod_cliente,
+      ultimo_mensaje,
+      ultimo_tipo,
+      ultimo_at,
+      unread_count,
+      estado,
+      updated_at
+    ) VALUES (
+      ?, ?, ?, ?, COALESCE(?, NOW()), ?, 'NUEVO', NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+      cod_cliente = COALESCE(VALUES(cod_cliente), cod_cliente),
+      ultimo_mensaje = VALUES(ultimo_mensaje),
+      ultimo_tipo = VALUES(ultimo_tipo),
+      ultimo_at = COALESCE(VALUES(ultimo_at), NOW()),
+      unread_count = CASE
+        WHEN ? = 1 THEN unread_count + 1
+        ELSE unread_count
+      END,
+      updated_at = NOW()
+    `,
+    [
+      telefono,
+      codCliente,
+      ultimoMensaje,
+      ultimoTipo,
+      ultimoAt,
+      incrementarUnread ? 1 : 0,
+      incrementarUnread ? 1 : 0,
+    ]
+  );
+}
+
+async function handleMessageStatus(
+  conn: PoolConnection,
+  statusItem: any,
+  rawPayload: unknown
+) {
+  const idMensajeWhatsapp = String(statusItem?.id || "").trim();
+  const estadoMeta = String(statusItem?.status || "").trim().toLowerCase();
+  const recipientId = normalizePhone(statusItem?.recipient_id);
+
+  if (!idMensajeWhatsapp) return;
+
+  let newEstado: string | null = null;
+  let dateFieldSql = "";
+  let errorMensaje: string | null = null;
+
+  if (estadoMeta === "sent") {
+    newEstado = "SENT";
+  } else if (estadoMeta === "delivered") {
+    newEstado = "DELIVERED";
+    dateFieldSql = "fecha_entregado = NOW(),";
+  } else if (estadoMeta === "read") {
+    newEstado = "READ";
+    dateFieldSql = "fecha_leido = NOW(),";
+  } else if (estadoMeta === "failed") {
+    newEstado = "FAILED";
+    dateFieldSql = "fecha_fallo = NOW(),";
+
+    const firstError = statusItem?.errors?.[0];
+    if (firstError) {
+      const code = firstError?.code ? `(${firstError.code}) ` : "";
+      const title = firstError?.title ? `${firstError.title} - ` : "";
+      const message = firstError?.message || "Error desconocido";
+      errorMensaje = `${code}${title}${message}`.trim();
+    }
+  }
+
+  await insertEvento(
+    conn,
+    `status_${estadoMeta || "unknown"}`,
+    rawPayload,
+    idMensajeWhatsapp,
+    recipientId
+  );
+
+  if (!newEstado) return;
+
+  await conn.execute(
+    `
+    UPDATE envios_whatsapp
+    SET
+      estado = ?,
+      ${dateFieldSql}
+      error_mensaje = CASE
+        WHEN ? IS NOT NULL THEN ?
+        ELSE error_mensaje
+      END
+    WHERE id_mensaje_whatsapp = ?
+    `,
+    [newEstado, errorMensaje, errorMensaje, idMensajeWhatsapp]
+  );
+
+  if (recipientId) {
+    await upsertConversation({
+      conn,
+      telefono: recipientId,
+      ultimoMensaje:
+        estadoMeta === "read"
+          ? "Mensaje leído por el cliente."
+          : estadoMeta === "delivered"
+          ? "Mensaje entregado al cliente."
+          : estadoMeta === "failed"
+          ? "Error en entrega del mensaje."
+          : "Mensaje saliente actualizado.",
+      ultimoTipo: "OUT",
+      incrementarUnread: false,
+    });
+  }
+}
+
+async function findCodClienteByPhone(
+  conn: PoolConnection,
+  telefono: string
+): Promise<number | null> {
+  const [rows] = await conn.query<RowDataPacket[]>(
+    `
+    SELECT cod_cliente
+    FROM conversaciones
+    WHERE telefono = ?
+    LIMIT 1
+    `,
+    [telefono]
+  );
+
+  if (rows.length && rows[0].cod_cliente) {
+    return Number(rows[0].cod_cliente);
+  }
+
+  const [syncRows] = await conn.query<RowDataPacket[]>(
+    `
+    SELECT cod_cliente
+    FROM crm_clientes_sync
+    WHERE telefono_normalizado = ?
+    LIMIT 1
+    `,
+    [telefono]
+  );
+
+  if (syncRows.length && syncRows[0].cod_cliente) {
+    return Number(syncRows[0].cod_cliente);
   }
 
   return null;
 }
 
-/**
- * Mapea tipo Meta -> enum tuyo
- */
-function mapTipo(type: string): string {
-  const t = String(type || "").toLowerCase();
-  if (t === "text") return "texto";
-  if (t === "button") return "boton";
-  if (t === "interactive") return "lista";
-  if (t === "image") return "imagen";
-  if (t === "audio") return "audio";
-  if (t === "document") return "documento";
-  return "desconocido";
+async function handleIncomingMessage(
+  conn: PoolConnection,
+  msg: any,
+  rawPayload: unknown
+) {
+  const telefono = normalizePhone(msg?.from);
+  const idMensajeWhatsapp = String(msg?.id || "").trim();
+  const tipo = String(msg?.type || "desconocido").trim();
+
+  if (!telefono || !idMensajeWhatsapp) return;
+
+  let contenido: string | null = null;
+  let idOpcion: string | null = null;
+  let tituloOpcion: string | null = null;
+
+  if (tipo === "text") {
+    contenido = msg?.text?.body ? String(msg.text.body) : null;
+  } else if (tipo === "button") {
+    contenido = msg?.button?.text ? String(msg.button.text) : null;
+    idOpcion = msg?.button?.payload ? String(msg.button.payload) : null;
+    tituloOpcion = msg?.button?.text ? String(msg.button.text) : null;
+  } else if (tipo === "interactive") {
+    const interactiveType = String(msg?.interactive?.type || "").trim();
+
+    if (interactiveType === "button_reply") {
+      contenido = msg?.interactive?.button_reply?.title
+        ? String(msg.interactive.button_reply.title)
+        : null;
+      idOpcion = msg?.interactive?.button_reply?.id
+        ? String(msg.interactive.button_reply.id)
+        : null;
+      tituloOpcion = contenido;
+    } else if (interactiveType === "list_reply") {
+      contenido = msg?.interactive?.list_reply?.title
+        ? String(msg.interactive.list_reply.title)
+        : null;
+      idOpcion = msg?.interactive?.list_reply?.id
+        ? String(msg.interactive.list_reply.id)
+        : null;
+      tituloOpcion = contenido;
+    } else {
+      contenido = JSON.stringify(msg?.interactive ?? {});
+    }
+  } else if (tipo === "image") {
+    contenido = "[Imagen recibida]";
+  } else if (tipo === "audio") {
+    contenido = "[Audio recibido]";
+  } else if (tipo === "document") {
+    contenido = "[Documento recibido]";
+  } else {
+    contenido = `[${tipo}]`;
+  }
+
+  const codCliente = await findCodClienteByPhone(conn, telefono);
+
+  await insertEvento(
+    conn,
+    "incoming_message",
+    rawPayload,
+    idMensajeWhatsapp,
+    telefono
+  );
+
+  await conn.execute<ResultSetHeader>(
+    `
+    INSERT INTO mensajes_entrantes (
+      telefono,
+      cod_cliente,
+      id_mensaje_whatsapp,
+      tipo,
+      contenido,
+      id_opcion,
+      titulo_opcion,
+      fecha_recibido
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+    ON DUPLICATE KEY UPDATE
+      contenido = VALUES(contenido),
+      id_opcion = VALUES(id_opcion),
+      titulo_opcion = VALUES(titulo_opcion)
+    `,
+    [
+      telefono,
+      codCliente,
+      idMensajeWhatsapp,
+      tipo,
+      contenido,
+      idOpcion,
+      tituloOpcion,
+    ]
+  );
+
+  await upsertConversation({
+    conn,
+    telefono,
+    codCliente,
+    ultimoMensaje: contenido,
+    ultimoTipo: "IN",
+    incrementarUnread: true,
+  });
 }
 
-/**
- * GET: Validación webhook (Meta)
- * Debe devolver el challenge como texto plano.
- */
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
+async function processWebhookPayload(payload: any) {
+  const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+  if (!entries.length) return;
 
-  const mode = searchParams.get("hub.mode");
-  const token = searchParams.get("hub.verify_token");
-  const challenge = searchParams.get("hub.challenge");
+  const conn = await pool.getConnection();
 
-  // Meta manda subscribe + verify_token + challenge
-  if (mode === "subscribe" && token && token === VERIFY_TOKEN) {
-    return new NextResponse(challenge ?? "", {
+  try {
+    await conn.beginTransaction();
+
+    for (const entry of entries) {
+      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+
+      for (const change of changes) {
+        const value = change?.value ?? {};
+
+        const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
+        for (const statusItem of statuses) {
+          await handleMessageStatus(conn, statusItem, payload);
+        }
+
+        const messages = Array.isArray(value?.messages) ? value.messages : [];
+        for (const msg of messages) {
+          await handleIncomingMessage(conn, msg, payload);
+        }
+      }
+    }
+
+    await conn.commit();
+  } catch (error) {
+    try {
+      await conn.rollback();
+    } catch {}
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function GET(req: NextRequest) {
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "";
+  const url = new URL(req.url);
+
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge");
+
+  if (mode === "subscribe" && token === verifyToken) {
+    return new NextResponse(challenge || "", {
       status: 200,
       headers: { "Content-Type": "text/plain" },
     });
   }
 
-  // Para debug humano (cuando abrís en el navegador sin challenge)
-  // devolvemos 403 para que Meta rechace cuando token no coincide.
-  return new NextResponse("Forbidden", { status: 403 });
+  return NextResponse.json(
+    { ok: false, error: "Verificación inválida." },
+    { status: 403 }
+  );
 }
 
-/**
- * POST: eventos (mensajes entrantes y statuses)
- */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const payload = await req.json();
 
-    // Lazy import: así GET nunca intenta levantar la DB
-    const { pool } = await import("@/lib/db");
+    await processWebhookPayload(payload);
 
-    let inboundCount = 0;
-    let statusesCount = 0;
-
-    const entries = Array.isArray(body?.entry) ? body.entry : [];
-
-    for (const entry of entries) {
-      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
-      for (const ch of changes) {
-        const value = ch?.value || {};
-
-        const messages: any[] = Array.isArray(value?.messages) ? value.messages : [];
-        const statuses: any[] = Array.isArray(value?.statuses) ? value.statuses : [];
-
-        // A) Inbound messages
-        for (const m of messages) {
-          inboundCount++;
-
-          const telefono = String(m.from || "").trim();
-          const wamid = String(m.id || "").trim();
-          const type = String(m.type || "text").trim();
-          const contenido = pickText(m) ?? JSON.stringify(m);
-
-          await pool.query(
-            `INSERT INTO mensajes_entrantes
-              (telefono, id_mensaje_whatsapp, tipo, contenido, fecha_recibido)
-             VALUES (?, ?, ?, ?, NOW())
-             ON DUPLICATE KEY UPDATE
-               contenido = VALUES(contenido),
-               fecha_recibido = VALUES(fecha_recibido)`,
-            [telefono, wamid || null, mapTipo(type), contenido]
-          );
-
-          // Upsert conversación
-          await pool.query(
-            `INSERT INTO conversaciones_whatsapp
-              (telefono, estado, fecha_actualizacion)
-             VALUES (?, 'RESPONDIO', NOW())
-             ON DUPLICATE KEY UPDATE
-               estado='RESPONDIO',
-               fecha_actualizacion=NOW()`,
-            [telefono]
-          );
-        }
-
-        // B) Statuses
-        for (const s of statuses) {
-          statusesCount++;
-
-          const status = String(s.status || "").toUpperCase(); // sent/delivered/read/failed
-          const wamid = String(s.id || "").trim();
-          if (!wamid) continue;
-
-          let estado = "ENVIADO";
-          if (status === "FAILED") estado = "ERROR";
-
-          // Si no existe mensajes_salientes, ignoramos sin romper webhook
-          try {
-            await pool.query(
-              `UPDATE mensajes_salientes
-               SET estado = ?
-               WHERE id_mensaje_whatsapp = ?`,
-              [estado, wamid]
-            );
-          } catch {
-            // ignore
-          }
-        }
-      }
-    }
-
-    return NextResponse.json({ ok: true, inbound: inboundCount, statuses: statusesCount });
-  } catch (e: any) {
-    console.error("WEBHOOK ERROR:", e);
-    return NextResponse.json({ ok: false, error: e?.message || "Error webhook" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    console.error("Webhook WhatsApp error:", error);
+    return NextResponse.json(
+      { ok: false, error: error?.message || "Error procesando webhook." },
+      { status: 500 }
+    );
   }
 }
