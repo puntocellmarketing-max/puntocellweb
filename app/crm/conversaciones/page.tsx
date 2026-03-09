@@ -124,6 +124,7 @@ export default function CRMConversationsPage() {
   async function loadConvs() {
     try {
       setRefreshing(true);
+
       const res = await fetch("/api/crm/conversaciones?limit=150", {
         cache: "no-store",
       });
@@ -134,11 +135,11 @@ export default function CRMConversationsPage() {
         throw new Error(data?.error || "No se pudo cargar conversaciones");
       }
 
-      const rows = data.rows || [];
+      const rows = Array.isArray(data.rows) ? (data.rows as Conversation[]) : [];
       setConvs(rows);
 
       if (selectedPhone) {
-        const current = rows.find((r: Conversation) => r.telefono === selectedPhone);
+        const current = rows.find((r) => r.telefono === selectedPhone);
         if (current) {
           setSelectedCodCliente(current.cod_cliente ?? null);
           setSelectedEstado(current.estado ?? "");
@@ -156,6 +157,7 @@ export default function CRMConversationsPage() {
   async function loadChat(telefono: string) {
     try {
       setChatStatus("Cargando historial...");
+
       const res = await fetch(
         `/api/crm/historial?telefono=${encodeURIComponent(telefono)}&limit=300`,
         { cache: "no-store" }
@@ -167,7 +169,7 @@ export default function CRMConversationsPage() {
         throw new Error(data?.error || "No se pudo cargar historial");
       }
 
-      setChat(data.rows || []);
+      setChat(Array.isArray(data.rows) ? (data.rows as ChatMsg[]) : []);
       setChatStatus("");
     } catch (e: any) {
       setChatStatus(e?.message || "Error cargando historial");
@@ -271,9 +273,7 @@ export default function CRMConversationsPage() {
         String(c.cod_cliente || "").toLowerCase().includes(q) ||
         String(c.estado || "").toLowerCase().includes(q);
 
-      const passesEstado =
-        estadoFilter === "TODOS" || c.estado === estadoFilter;
-
+      const passesEstado = estadoFilter === "TODOS" || c.estado === estadoFilter;
       const passesUnread = !onlyUnread || Number(c.unread_count || 0) > 0;
 
       return passesSearch && passesEstado && passesUnread;
@@ -292,6 +292,19 @@ export default function CRMConversationsPage() {
       pagados: convs.filter((c) => c.estado === "PAGADO").length,
     };
   }, [convs]);
+
+  const agendarHref = useMemo(() => {
+    if (!selectedPhone) return "#";
+
+    const params = new URLSearchParams();
+    params.set("telefono", selectedPhone);
+
+    if (selectedCodCliente !== null && selectedCodCliente !== undefined) {
+      params.set("codCliente", String(selectedCodCliente));
+    }
+
+    return `/crm/agendar?${params.toString()}`;
+  }, [selectedPhone, selectedCodCliente]);
 
   return (
     <div className="min-h-[calc(100vh-80px)] bg-slate-50">
@@ -467,7 +480,7 @@ export default function CRMConversationsPage() {
 
                         <div className="text-right text-[11px] text-slate-500">
                           <div>{formatDateShort(c.ultimo_at)}</div>
-                          <div className="mt-1">{formatDate(c.ultimo_at).split(",")[1] || ""}</div>
+                          <div>{formatDate(c.ultimo_at).split(",")[1] || ""}</div>
                         </div>
                       </div>
 
@@ -570,7 +583,7 @@ export default function CRMConversationsPage() {
                 </button>
 
                 <Link
-                  href={`/crm/agendar?telefono=${encodeURIComponent(selectedPhone || "")}`}
+                  href={agendarHref}
                   className={`inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50 ${
                     !selectedPhone ? "pointer-events-none opacity-50" : ""
                   }`}
@@ -623,9 +636,7 @@ export default function CRMConversationsPage() {
                       </div>
 
                       <div className="whitespace-pre-wrap break-words text-sm leading-6">
-                        {m.texto || (
-                          <span className="text-slate-500">(sin texto)</span>
-                        )}
+                        {m.texto || <span className="text-slate-500">(sin texto)</span>}
                       </div>
 
                       {(m.titulo_opcion || m.id_opcion) && (
