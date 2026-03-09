@@ -1,18 +1,21 @@
 import AgendarClientPage from "./AgendarClientPage";
 
 type PageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     telefono?: string;
     codCliente?: string;
-  };
+    [key: string]: string | string[] | undefined;
+  }>;
 };
 
-export default function Page({ searchParams }: PageProps) {
+export default async function Page({ searchParams }: PageProps) {
+  const params = (await searchParams) ?? {};
+
   const telefonoParam =
-    typeof searchParams?.telefono === "string" ? searchParams.telefono : "";
+    typeof params.telefono === "string" ? params.telefono : "";
 
   const codClienteParam =
-    typeof searchParams?.codCliente === "string" ? searchParams.codCliente : "";
+    typeof params.codCliente === "string" ? params.codCliente : "";
 
   return (
     <AgendarClientPage
