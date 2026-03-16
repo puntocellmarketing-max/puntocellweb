@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { pool, dbQuery } from "@/lib/db";
+import { pool } from "@/lib/db";
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
