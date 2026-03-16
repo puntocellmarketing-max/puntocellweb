@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
-import { dbQuery } from "@/lib/db";
+import { pool } from "@/lib/db";
+import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
+
+type ConversacionRow = RowDataPacket & {
+  telefono: string;
+  cod_cliente: number | null;
+  ultimo_mensaje: string | null;
+  ultimo_tipo: string | null;
+  ultimo_at: string | null;
+  unread_count: number | null;
+  estado: string | null;
+};
 
 export async function GET(req: Request) {
   try {
@@ -11,7 +22,6 @@ export async function GET(req: Request) {
     const parsed = parseInt(limitRaw, 10);
     const safeLimit = Number.isFinite(parsed) ? Math.max(1, Math.min(200, parsed)) : 50;
 
-    // IMPORTANTe: LIMIT sin placeholder (evita mysql_stmt_execute error)
     const sql = `
       SELECT
         telefono,
@@ -26,11 +36,14 @@ export async function GET(req: Request) {
       LIMIT ${safeLimit}
     `;
 
-    const rows = await dbQuery(sql); // sin params
+    const [rows] = await pool.query<ConversacionRow[]>(sql);
 
     return NextResponse.json({ ok: true, rows });
   } catch (e: any) {
     console.error("Error /crm/conversaciones:", e);
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 500 }
+    );
   }
 }

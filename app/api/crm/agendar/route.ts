@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbQuery } from "@/lib/db";
+import { pool } from "@/lib/db";
+import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,10 @@ type AgendarPayload = {
   nota?: string | null;
   resultado?: string | null;
   creadoPor?: string | null;
+};
+
+type CobradorActivoRow = RowDataPacket & {
+  id_cobrador: number;
 };
 
 const TIPOS_GESTION_VALIDOS = new Set([
@@ -120,7 +125,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const cobradores = await dbQuery<any[]>(
+    const [cobradores] = await pool.query<CobradorActivoRow[]>(
       `
       SELECT id_cobrador
       FROM crm_cobradores
@@ -139,7 +144,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const insertResult: any = await dbQuery(
+    const [insertResult] = await pool.execute<ResultSetHeader>(
       `
       INSERT INTO agenda_crm (
         cod_cliente,

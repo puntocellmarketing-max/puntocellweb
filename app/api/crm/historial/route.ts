@@ -1,7 +1,20 @@
 import { NextResponse } from "next/server";
-import { dbQuery } from "@/lib/db";
+import { pool } from "@/lib/db";
+import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
+
+type HistorialRow = RowDataPacket & {
+  id: string;
+  dir: "IN" | "OUT";
+  telefono: string;
+  texto: string | null;
+  tipo: string | null;
+  id_opcion: string | null;
+  titulo_opcion: string | null;
+  fecha: string | null;
+  estado_out: string | null;
+};
 
 export async function GET(req: Request) {
   try {
@@ -16,7 +29,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "Falta telefono" }, { status: 400 });
     }
 
-    // IMPORTANTE: LIMIT sin placeholder para evitar mysqld_stmt_execute
     const sql = `
       (
         SELECT 
@@ -51,12 +63,14 @@ export async function GET(req: Request) {
       LIMIT ${limit}
     `;
 
-    // Parametrizamos SOLO telefono, telefono. LIMIT va inline.
-    const rows = await dbQuery(sql, [telefono, telefono]);
+    const [rows] = await pool.query<HistorialRow[]>(sql, [telefono, telefono]);
 
     return NextResponse.json({ ok: true, rows });
   } catch (e: any) {
     console.error("Error /crm/historial:", e);
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 500 }
+    );
   }
 }

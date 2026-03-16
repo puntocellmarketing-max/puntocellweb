@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { dbQuery } from "@/lib/db";
+import { pool } from "@/lib/db";
+import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
 
-type CobradorRow = {
+type CobradorRow = RowDataPacket & {
   id_cobrador: number;
   cod_cobrador_origen: number | null;
   nombre: string;
@@ -14,7 +15,7 @@ type CobradorRow = {
 
 export async function GET() {
   try {
-    const rows = await dbQuery<CobradorRow[]>(
+    const [rows] = await pool.query<CobradorRow[]>(
       `
       SELECT
         id_cobrador,
