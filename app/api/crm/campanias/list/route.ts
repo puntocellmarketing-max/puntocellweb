@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { dbQuery } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
+import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
 
-type CampaignRow = {
+type CampaignRow = RowDataPacket & {
   id_campania: number;
   id_audiencia: number | null;
   nombre: string;
@@ -99,7 +100,7 @@ export async function GET(req: Request) {
       LIMIT ${limit}
     `;
 
-    const rows = await dbQuery<CampaignRow[]>(sql, params);
+    const [rows] = await crmPool.query<CampaignRow[]>(sql, params);
 
     return NextResponse.json({
       ok: true,

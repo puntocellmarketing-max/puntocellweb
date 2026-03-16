@@ -75,7 +75,7 @@ export default function SyncClientesPage() {
 
   const [loading, setLoading] = useState(false);
   const [job, setJob] = useState<SyncJob | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string>("");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -84,16 +84,31 @@ export default function SyncClientesPage() {
   }
 
   const canSubmit = useMemo(() => {
-    return (
+    return Boolean(
       form.localHost.trim() &&
-      form.localDatabase.trim() &&
-      form.localUser.trim() &&
-      form.localView.trim() &&
-      form.cloudHost.trim() &&
-      form.cloudDatabase.trim() &&
-      form.cloudUser.trim()
+        form.localDatabase.trim() &&
+        form.localUser.trim() &&
+        form.localView.trim() &&
+        form.cloudHost.trim() &&
+        form.cloudDatabase.trim() &&
+        form.cloudUser.trim()
     );
   }, [form]);
+
+  const isJobFinished = useMemo(() => {
+    if (!job) return false;
+
+    return (
+      job.status === "success" ||
+      job.status === "error" ||
+      (job.totalLeidos > 0 && job.totalProcesados >= job.totalLeidos)
+    );
+  }, [job]);
+
+  const canContinueToAudience = useMemo(() => {
+    if (!job) return false;
+    return job.status === "success" && job.totalValidos > 0;
+  }, [job]);
 
   async function fetchJobStatus(id: string) {
     const res = await fetch(`/api/crm/sync-clientes/status/${id}`, {
@@ -117,6 +132,7 @@ export default function SyncClientesPage() {
 
     if (terminado) {
       setLoading(false);
+
       if (pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
@@ -192,6 +208,7 @@ export default function SyncClientesPage() {
         fetchJobStatus(data.jobId).catch((err) => {
           setErrorMsg(err?.message || "Error consultando progreso.");
           setLoading(false);
+
           if (pollRef.current) {
             clearInterval(pollRef.current);
             pollRef.current = null;
@@ -211,249 +228,313 @@ export default function SyncClientesPage() {
   }, []);
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-slate-50">
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="mb-6 flex items-center justify-between gap-3">
+    <div className="space-y-8">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">
-              Sincronizar clientes
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Filtra la vista local y hace UPSERT en{" "}
-              <span className="font-mono">crm_clientes_sync</span>.
-            </p>
-          </div>
-
-          <Link
-            href="/crm"
-            className="inline-flex items-center rounded-xl border bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm hover:bg-slate-50"
-          >
-            Volver al CRM
-          </Link>
-        </div>
-
-        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <div className="font-semibold">Idea de uso</div>
-          <div className="mt-1">
-            Ejemplo: clientes con <span className="font-mono">Categoría=DEFINIR</span>,
-            zona específica, último pago entre dos fechas, con atraso y saldo pendiente,
-            listos para notificar por lotes.
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold text-slate-900">
-                Base local
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Origen: vista local consolidada.
-              </p>
-
-              <div className="mt-4 grid gap-3">
-                <Field label="Host" value={form.localHost} onChange={(v) => updateField("localHost", v)} />
-                <Field label="Puerto" value={form.localPort} onChange={(v) => updateField("localPort", v)} />
-                <Field label="Base de datos" value={form.localDatabase} onChange={(v) => updateField("localDatabase", v)} />
-                <Field label="Usuario" value={form.localUser} onChange={(v) => updateField("localUser", v)} />
-                <Field label="Password" type="password" value={form.localPassword} onChange={(v) => updateField("localPassword", v)} />
-                <Field label="Vista" value={form.localView} onChange={(v) => updateField("localView", v)} />
-              </div>
+            <div className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">
+              Fase 1 · Sincronización
             </div>
 
-            <div className="rounded-2xl border bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold text-slate-900">
-                Base en la nube
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Destino: tabla crm_clientes_sync.
-              </p>
-
-              <div className="mt-4 grid gap-3">
-                <Field label="Host" value={form.cloudHost} onChange={(v) => updateField("cloudHost", v)} />
-                <Field label="Puerto" value={form.cloudPort} onChange={(v) => updateField("cloudPort", v)} />
-                <Field label="Base de datos" value={form.cloudDatabase} onChange={(v) => updateField("cloudDatabase", v)} />
-                <Field label="Usuario" value={form.cloudUser} onChange={(v) => updateField("cloudUser", v)} />
-                <Field label="Password" type="password" value={form.cloudPassword} onChange={(v) => updateField("cloudPassword", v)} />
-                <Field label="Límite para prueba (opcional)" value={form.limit} onChange={(v) => updateField("limit", v)} placeholder="Ej: 100" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Filtros dinámicos
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+              Sync de clientes
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Déjalos vacíos si no quieres aplicarlos.
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Filtra la vista local y realiza UPSERT en{" "}
+              <span className="font-mono text-slate-800">crm_clientes_sync</span>{" "}
+              para preparar clientes candidatos a notificación.
             </p>
+          </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/crm"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Dashboard CRM
+            </Link>
+            <Link
+              href="/crm/audiencias"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Audiencias
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+        <div className="text-sm font-semibold text-amber-900">Uso recomendado</div>
+        <p className="mt-1 text-sm leading-6 text-amber-800">
+          Aplicá filtros por categoría, zona, último pago, atraso y saldo para subir
+          solo clientes listos para revisión o notificación.
+        </p>
+      </section>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <section className="grid gap-6 xl:grid-cols-2">
+          <CardSection
+            title="Base local"
+            subtitle="Origen: vista local consolidada."
+          >
+            <div className="grid gap-4">
+              <Field label="Host" value={form.localHost} onChange={(v) => updateField("localHost", v)} />
+              <Field label="Puerto" value={form.localPort} onChange={(v) => updateField("localPort", v)} />
+              <Field label="Base de datos" value={form.localDatabase} onChange={(v) => updateField("localDatabase", v)} />
+              <Field label="Usuario" value={form.localUser} onChange={(v) => updateField("localUser", v)} />
+              <Field label="Password" type="password" value={form.localPassword} onChange={(v) => updateField("localPassword", v)} />
+              <Field label="Vista" value={form.localView} onChange={(v) => updateField("localView", v)} />
+            </div>
+          </CardSection>
+
+          <CardSection
+            title="Base en la nube"
+            subtitle="Destino: tabla crm_clientes_sync."
+          >
+            <div className="grid gap-4">
+              <Field label="Host" value={form.cloudHost} onChange={(v) => updateField("cloudHost", v)} />
+              <Field label="Puerto" value={form.cloudPort} onChange={(v) => updateField("cloudPort", v)} />
+              <Field label="Base de datos" value={form.cloudDatabase} onChange={(v) => updateField("cloudDatabase", v)} />
+              <Field label="Usuario" value={form.cloudUser} onChange={(v) => updateField("cloudUser", v)} />
+              <Field label="Password" type="password" value={form.cloudPassword} onChange={(v) => updateField("cloudPassword", v)} />
               <Field
-                label="Categoría"
-                value={form.categoria}
-                onChange={(v) => updateField("categoria", v)}
-                placeholder="Ej: DEFINIR"
+                label="Límite para prueba"
+                value={form.limit}
+                onChange={(v) => updateField("limit", v)}
+                placeholder="Ej: 100"
               />
+            </div>
+          </CardSection>
+        </section>
 
-              <Field
-                label="Zona"
-                value={form.zona}
-                onChange={(v) => updateField("zona", v)}
-                placeholder="Ej: Concepción"
+        <CardSection
+          title="Filtros del sync"
+          subtitle="Dejalos vacíos si no querés aplicarlos."
+        >
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Field
+              label="Categoría"
+              value={form.categoria}
+              onChange={(v) => updateField("categoria", v)}
+              placeholder="Ej: DEFINIR"
+            />
+
+            <Field
+              label="Zona"
+              value={form.zona}
+              onChange={(v) => updateField("zona", v)}
+              placeholder="Ej: Concepción"
+            />
+
+            <DateField
+              label="Último pago desde"
+              value={form.ultimoPagoDesde}
+              onChange={(v) => updateField("ultimoPagoDesde", v)}
+            />
+
+            <DateField
+              label="Último pago hasta"
+              value={form.ultimoPagoHasta}
+              onChange={(v) => updateField("ultimoPagoHasta", v)}
+            />
+
+            <Field
+              label="Días de atraso mínimo"
+              value={form.diasAtrasoMin}
+              onChange={(v) => updateField("diasAtrasoMin", v)}
+              placeholder="Ej: 1"
+            />
+
+            <Field
+              label="Saldo mínimo"
+              value={form.saldoMin}
+              onChange={(v) => updateField("saldoMin", v)}
+              placeholder="Ej: 1"
+            />
+          </div>
+
+          <div className="mt-5">
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={form.soloTelefonosValidos}
+                onChange={(e) => updateField("soloTelefonosValidos", e.target.checked)}
               />
+              Solo teléfonos válidos
+            </label>
+          </div>
+        </CardSection>
 
-              <div className="grid gap-1 text-sm">
-                <span className="text-slate-700">Último pago desde</span>
-                <input
-                  type="date"
-                  value={form.ultimoPagoDesde}
-                  onChange={(e) => updateField("ultimoPagoDesde", e.target.value)}
-                  className="rounded-xl border px-3 py-2"
-                />
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Ejecutar sincronización
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Se subirán solo los clientes que cumplan los filtros definidos.
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={!canSubmit || loading}
+              className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? "Sincronizando..." : "Ejecutar sync"}
+            </button>
+          </div>
+
+          {errorMsg ? (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {errorMsg}
+            </div>
+          ) : null}
+        </section>
+      </form>
+
+      {job ? (
+        <section className="space-y-6">
+          <CardSection title="Resultado del job" subtitle={`ID: ${job.id}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-600">
+                Etapa actual: <span className="font-medium text-slate-900">{job.stage}</span>
               </div>
 
-              <div className="grid gap-1 text-sm">
-                <span className="text-slate-700">Último pago hasta</span>
-                <input
-                  type="date"
-                  value={form.ultimoPagoHasta}
-                  onChange={(e) => updateField("ultimoPagoHasta", e.target.value)}
-                  className="rounded-xl border px-3 py-2"
-                />
+              <div
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  job.status === "success"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : job.status === "error"
+                    ? "bg-red-100 text-red-800"
+                    : "bg-blue-100 text-blue-800"
+                }`}
+              >
+                {job.status.toUpperCase()}
               </div>
-
-              <Field
-                label="Días de atraso mínimo"
-                value={form.diasAtrasoMin}
-                onChange={(v) => updateField("diasAtrasoMin", v)}
-                placeholder="Ej: 1"
-              />
-
-              <Field
-                label="Saldo mínimo"
-                value={form.saldoMin}
-                onChange={(v) => updateField("saldoMin", v)}
-                placeholder="Ej: 1"
-              />
             </div>
 
             <div className="mt-4">
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={form.soloTelefonosValidos}
-                  onChange={(e) => updateField("soloTelefonosValidos", e.target.checked)}
+              <div className="mb-2 flex items-center justify-between text-sm text-slate-700">
+                <span>Progreso</span>
+                <span>{job.progress}%</span>
+              </div>
+
+              <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-3 rounded-full transition-all ${
+                    job.status === "error" ? "bg-red-500" : "bg-blue-600"
+                  }`}
+                  style={{ width: `${job.progress}%` }}
                 />
-                Solo teléfonos válidos
-              </label>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="submit"
-                disabled={!canSubmit || loading}
-                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {loading ? "Sincronizando..." : "Ejecutar sincronización"}
-              </button>
-
-              <div className="text-sm text-slate-500">
-                Sube solo los clientes que cumplen los filtros definidos.
               </div>
             </div>
 
-            {errorMsg && (
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <Stat label="Leídos" value={job.totalLeidos} />
+              <Stat label="Procesados" value={job.totalProcesados} />
+              <Stat label="Válidos" value={job.totalValidos} color="emerald" />
+              <Stat label="Inválidos" value={job.totalInvalidos} color="red" />
+            </div>
+
+            {job.error ? (
               <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {errorMsg}
+                <strong>Error:</strong> {job.error}
               </div>
-            )}
-          </div>
-        </form>
+            ) : null}
+          </CardSection>
 
-        {job && (
-          <div className="mt-6 space-y-6">
-            <div className="rounded-2xl border bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+          {isJobFinished ? (
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">
-                    Estado del job
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    ID: <span className="font-mono">{job.id}</span>
-                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Continuar flujo
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {job.status === "success"
+                      ? `El sync finalizó correctamente. ${job.totalValidos} clientes válidos quedaron listos para el siguiente paso.`
+                      : "El sync terminó con error. Revisá logs y corregí antes de continuar."}
+                  </p>
                 </div>
 
+                <div className="flex flex-wrap gap-3">
+                  <Link
+                    href="/crm"
+                    className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                  >
+                    Dashboard
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJob(null);
+                      setErrorMsg("");
+                    }}
+                    className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                  >
+                    Nuevo sync
+                  </button>
+
+                  {canContinueToAudience ? (
+                    <Link
+                      href={`/crm/audiencias?jobId=${encodeURIComponent(job.id)}`}
+                      className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+                    >
+                      Crear audiencia
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <CardSection title="Logs del proceso" subtitle="Seguimiento técnico del job">
+            <div className="max-h-[320px] space-y-2 overflow-y-auto rounded-2xl bg-slate-50 p-3">
+              {job.logs.map((log, idx) => (
                 <div
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    job.status === "success"
-                      ? "bg-emerald-100 text-emerald-800"
-                      : job.status === "error"
-                      ? "bg-red-100 text-red-800"
-                      : "bg-blue-100 text-blue-800"
+                  key={idx}
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    log.level === "error"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : log.level === "success"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-700"
                   }`}
                 >
-                  {job.status.toUpperCase()}
+                  <div className="font-mono text-[11px] opacity-70">{log.ts}</div>
+                  <div>{log.message}</div>
                 </div>
-              </div>
-
-              <div className="mt-4">
-                <div className="mb-2 flex items-center justify-between text-sm text-slate-700">
-                  <span>Etapa: {job.stage}</span>
-                  <span>{job.progress}%</span>
-                </div>
-                <div className="h-4 w-full overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className={`h-4 rounded-full transition-all ${
-                      job.status === "error" ? "bg-red-500" : "bg-blue-600"
-                    }`}
-                    style={{ width: `${job.progress}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 md:grid-cols-4">
-                <Stat label="Leídos" value={job.totalLeidos} />
-                <Stat label="Procesados" value={job.totalProcesados} />
-                <Stat label="Válidos" value={job.totalValidos} color="emerald" />
-                <Stat label="Inválidos" value={job.totalInvalidos} color="red" />
-              </div>
-
-              {job.error && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  <strong>Error:</strong> {job.error}
-                </div>
-              )}
+              ))}
             </div>
-
-            <div className="rounded-2xl border bg-white p-5 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900">Logs</div>
-              <div className="mt-3 max-h-[320px] overflow-y-auto space-y-2 rounded-xl bg-slate-50 p-3">
-                {job.logs.map((log, idx) => (
-                  <div
-                    key={idx}
-                    className={`rounded-lg border px-3 py-2 text-sm ${
-                      log.level === "error"
-                        ? "border-red-200 bg-red-50 text-red-700"
-                        : log.level === "success"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    <div className="font-mono text-[11px] opacity-70">
-                      {log.ts}
-                    </div>
-                    <div>{log.message}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+          </CardSection>
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+function CardSection({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+        {subtitle ? (
+          <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+        ) : null}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
   );
 }
 
@@ -471,14 +552,36 @@ function Field({
   placeholder?: string;
 }) {
   return (
-    <label className="grid gap-1 text-sm">
+    <label className="grid gap-1.5 text-sm">
       <span className="text-slate-700">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-xl border px-3 py-2"
+        className="rounded-xl border border-slate-200 px-3 py-2.5 text-slate-900 outline-none transition focus:border-slate-400"
         placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="text-slate-700">{label}</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-xl border border-slate-200 px-3 py-2.5 text-slate-900 outline-none transition focus:border-slate-400"
       />
     </label>
   );
@@ -501,9 +604,9 @@ function Stat({
       : "text-slate-900";
 
   return (
-    <div className="rounded-xl bg-slate-50 p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className={`text-lg font-semibold ${colorClass}`}>{value}</div>
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-2 text-2xl font-semibold ${colorClass}`}>{value}</div>
     </div>
   );
 }

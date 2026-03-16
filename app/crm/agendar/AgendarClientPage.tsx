@@ -228,269 +228,283 @@ export default function AgendarClientPage({
   }
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-slate-50">
-      <div className="mx-auto max-w-5xl px-4 py-8 md:px-6 lg:px-8">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="mb-3 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                CRM / Agenda
-              </div>
-
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-                Agendar gestión
-              </h1>
-
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-                Registrá recordatorios, promesas de pago y seguimientos asociados
-                al cliente y al teléfono. Esta pantalla queda preparada para
-                control operativo y futuros reportes de comisión por cobrador.
-              </p>
+    <div className="space-y-8">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">
+              Fase 7 · Agenda operativa
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/crm"
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
-              >
-                Volver al panel
-              </Link>
-
-              <Link
-                href="/crm/conversaciones"
-                className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-              >
-                Volver al inbox
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
-          <form
-            onSubmit={handleSubmit}
-            className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-          >
-            <h2 className="text-xl font-semibold text-slate-900">
-              Datos de la gestión
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+              Registrar gestión
             </h2>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <Field
-                label="cod_cliente"
-                value={form.codCliente}
-                onChange={(v) => updateField("codCliente", v)}
-                placeholder="Ej: 1234"
-              />
-
-              <Field
-                label="Teléfono"
-                value={form.telefono}
-                onChange={(v) => updateField("telefono", v)}
-                placeholder="59598..."
-              />
-
-              <SelectField
-                label="Cobrador asignado"
-                value={form.idCobradorAsignado}
-                onChange={(v) => updateField("idCobradorAsignado", v)}
-                disabled={loadingCobradores}
-                options={cobradores.map((c) => ({
-                  value: String(c.id_cobrador),
-                  label: c.nombre,
-                }))}
-              />
-
-              <SelectField
-                label="Cobrador creador"
-                value={form.idCobradorCreador}
-                onChange={(v) => updateField("idCobradorCreador", v)}
-                disabled={loadingCobradores}
-                options={cobradores.map((c) => ({
-                  value: String(c.id_cobrador),
-                  label: c.nombre,
-                }))}
-              />
-
-              <SelectField
-                label="Tipo de gestión"
-                value={form.tipoGestion}
-                onChange={(v) => updateField("tipoGestion", v)}
-                options={TIPOS_GESTION.map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              />
-
-              <SelectField
-                label="Estado"
-                value={form.estado}
-                onChange={(v) => updateField("estado", v)}
-                options={ESTADOS.map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              />
-
-              <SelectField
-                label="Prioridad"
-                value={form.prioridad}
-                onChange={(v) => updateField("prioridad", v)}
-                options={PRIORIDADES.map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              />
-
-              <Field
-                label="Creado por"
-                value={form.creadoPor}
-                onChange={(v) => updateField("creadoPor", v)}
-                placeholder="Ej: Cesar / Admin / Supervisor"
-              />
-
-              <div className="grid gap-1 text-sm">
-                <span className="text-slate-700">Fecha recordatorio</span>
-                <input
-                  type="date"
-                  value={form.fechaRecordatorio}
-                  onChange={(e) =>
-                    updateField("fechaRecordatorio", e.target.value)
-                  }
-                  className="rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-500"
-                />
-              </div>
-
-              <div className="grid gap-1 text-sm">
-                <span className="text-slate-700">Hora recordatorio</span>
-                <input
-                  type="time"
-                  value={form.horaRecordatorio}
-                  onChange={(e) =>
-                    updateField("horaRecordatorio", e.target.value)
-                  }
-                  className="rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-1 text-sm">
-              <span className="text-slate-700">Nota</span>
-              <textarea
-                value={form.nota}
-                onChange={(e) => updateField("nota", e.target.value)}
-                rows={5}
-                className="rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500"
-                placeholder="Ej: Cliente responde que pagará a fin de mes..."
-              />
-            </div>
-
-            <div className="mt-5 grid gap-1 text-sm">
-              <span className="text-slate-700">
-                Resultado / observación adicional
-              </span>
-              <textarea
-                value={form.resultado}
-                onChange={(e) => updateField("resultado", e.target.value)}
-                rows={4}
-                className="rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500"
-                placeholder="Ej: Solicita recontacto el 30/03..."
-              />
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <button
-                type="submit"
-                disabled={!canSubmit || saving}
-                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {saving ? "Guardando..." : "Guardar agenda"}
-              </button>
-
-              <div className="text-sm text-slate-500">
-                Fecha/hora objetivo:{" "}
-                <span className="font-mono">
-                  {fechaRecordatorioFull || "—"}
-                </span>
-              </div>
-            </div>
-
-            {msg ? (
-              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                {msg}
-              </div>
-            ) : null}
-
-            {errorMsg ? (
-              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                {errorMsg}
-              </div>
-            ) : null}
-          </form>
-
-          <div className="space-y-6">
-            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-slate-900">
-                Resumen rápido
-              </h2>
-
-              <div className="mt-5 grid gap-4">
-                <SummaryItem label="Teléfono" value={form.telefono || "—"} />
-                <SummaryItem
-                  label="cod_cliente"
-                  value={form.codCliente || "—"}
-                />
-                <SummaryItem
-                  label="Cobrador asignado"
-                  value={
-                    cobradores.find(
-                      (c) =>
-                        String(c.id_cobrador) === form.idCobradorAsignado
-                    )?.nombre || "—"
-                  }
-                />
-                <SummaryItem
-                  label="Cobrador creador"
-                  value={
-                    cobradores.find(
-                      (c) =>
-                        String(c.id_cobrador) === form.idCobradorCreador
-                    )?.nombre || "—"
-                  }
-                />
-                <SummaryItem label="Tipo gestión" value={form.tipoGestion} />
-                <SummaryItem label="Estado" value={form.estado} />
-                <SummaryItem label="Prioridad" value={form.prioridad} />
-                <SummaryItem
-                  label="Recordatorio"
-                  value={fechaRecordatorioFull || "—"}
-                />
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-slate-900">
-                Recomendaciones
-              </h2>
-
-              <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
-                <p>
-                  Usá <span className="font-medium">PROMESA_PAGO</span> cuando el
-                  cliente confirma una fecha concreta.
-                </p>
-                <p>
-                  Marcá <span className="font-medium">ALTA</span> prioridad si el
-                  caso requiere seguimiento cercano.
-                </p>
-                <p>
-                  El cobrador asignado te va a servir luego para reportes y
-                  comisión.
-                </p>
-              </div>
-            </section>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Cargá recordatorios, promesas de pago y seguimientos asociados al
+              cliente, al teléfono y al cobrador responsable.
+            </p>
           </div>
-        </section>
-      </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/crm/conversaciones"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Inbox
+            </Link>
+
+            <Link
+              href="/crm"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Dashboard
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-xl font-semibold text-slate-950">
+              Datos de la gestión
+            </h3>
+
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+              Agenda CRM
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <Field
+              label="cod_cliente"
+              value={form.codCliente}
+              onChange={(v) => updateField("codCliente", v)}
+              placeholder="Ej: 1234"
+            />
+
+            <Field
+              label="Teléfono"
+              value={form.telefono}
+              onChange={(v) => updateField("telefono", v)}
+              placeholder="59598..."
+            />
+
+            <SelectField
+              label="Cobrador asignado"
+              value={form.idCobradorAsignado}
+              onChange={(v) => updateField("idCobradorAsignado", v)}
+              disabled={loadingCobradores}
+              options={cobradores.map((c) => ({
+                value: String(c.id_cobrador),
+                label: c.nombre,
+              }))}
+            />
+
+            <SelectField
+              label="Cobrador creador"
+              value={form.idCobradorCreador}
+              onChange={(v) => updateField("idCobradorCreador", v)}
+              disabled={loadingCobradores}
+              options={cobradores.map((c) => ({
+                value: String(c.id_cobrador),
+                label: c.nombre,
+              }))}
+            />
+
+            <SelectField
+              label="Tipo de gestión"
+              value={form.tipoGestion}
+              onChange={(v) => updateField("tipoGestion", v)}
+              options={TIPOS_GESTION.map((v) => ({
+                value: v,
+                label: v,
+              }))}
+            />
+
+            <SelectField
+              label="Estado"
+              value={form.estado}
+              onChange={(v) => updateField("estado", v)}
+              options={ESTADOS.map((v) => ({
+                value: v,
+                label: v,
+              }))}
+            />
+
+            <SelectField
+              label="Prioridad"
+              value={form.prioridad}
+              onChange={(v) => updateField("prioridad", v)}
+              options={PRIORIDADES.map((v) => ({
+                value: v,
+                label: v,
+              }))}
+            />
+
+            <Field
+              label="Creado por"
+              value={form.creadoPor}
+              onChange={(v) => updateField("creadoPor", v)}
+              placeholder="Ej: Cesar / Admin / Supervisor"
+            />
+
+            <DateField
+              label="Fecha recordatorio"
+              value={form.fechaRecordatorio}
+              onChange={(v) => updateField("fechaRecordatorio", v)}
+            />
+
+            <TimeField
+              label="Hora recordatorio"
+              value={form.horaRecordatorio}
+              onChange={(v) => updateField("horaRecordatorio", v)}
+            />
+          </div>
+
+          <div className="mt-5 grid gap-1.5 text-sm">
+            <span className="text-slate-700">Nota</span>
+            <textarea
+              value={form.nota}
+              onChange={(e) => updateField("nota", e.target.value)}
+              rows={5}
+              className="rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-500"
+              placeholder="Ej: Cliente responde que pagará a fin de mes..."
+            />
+          </div>
+
+          <div className="mt-5 grid gap-1.5 text-sm">
+            <span className="text-slate-700">Resultado / observación adicional</span>
+            <textarea
+              value={form.resultado}
+              onChange={(e) => updateField("resultado", e.target.value)}
+              rows={4}
+              className="rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-500"
+              placeholder="Ej: Solicita recontacto el 30/03..."
+            />
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={!canSubmit || saving}
+              className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? "Guardando..." : "Guardar agenda"}
+            </button>
+
+            <div className="text-sm text-slate-500">
+              Fecha/hora objetivo:{" "}
+              <span className="font-mono text-slate-700">
+                {fechaRecordatorioFull || "—"}
+              </span>
+            </div>
+          </div>
+
+          {msg ? (
+            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+              {msg}
+            </div>
+          ) : null}
+
+          {errorMsg ? (
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {errorMsg}
+            </div>
+          ) : null}
+        </form>
+
+        <div className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-slate-950">
+              Resumen rápido
+            </h3>
+
+            <div className="mt-5 grid gap-4">
+              <SummaryItem label="Teléfono" value={form.telefono || "—"} />
+              <SummaryItem label="cod_cliente" value={form.codCliente || "—"} />
+              <SummaryItem
+                label="Cobrador asignado"
+                value={
+                  cobradores.find(
+                    (c) => String(c.id_cobrador) === form.idCobradorAsignado
+                  )?.nombre || "—"
+                }
+              />
+              <SummaryItem
+                label="Cobrador creador"
+                value={
+                  cobradores.find(
+                    (c) => String(c.id_cobrador) === form.idCobradorCreador
+                  )?.nombre || "—"
+                }
+              />
+              <SummaryItem label="Tipo gestión" value={form.tipoGestion} />
+              <SummaryItem label="Estado" value={form.estado} />
+              <SummaryItem label="Prioridad" value={form.prioridad} />
+              <SummaryItem
+                label="Recordatorio"
+                value={fechaRecordatorioFull || "—"}
+              />
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-slate-950">
+              Recomendaciones
+            </h3>
+
+            <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+              <p>
+                Usá <span className="font-medium">PROMESA_PAGO</span> cuando el
+                cliente confirma una fecha concreta.
+              </p>
+              <p>
+                Marcá <span className="font-medium">ALTA</span> prioridad si el
+                caso requiere seguimiento cercano.
+              </p>
+              <p>
+                El cobrador asignado te va a servir luego para reportes y
+                comisión.
+              </p>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Continuar flujo
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  Después de registrar esta gestión, podés volver al inbox o seguir
+                  revisando campañas y resultados.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/crm/conversaciones"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                >
+                  Volver al inbox
+                </Link>
+
+                <Link
+                  href="/crm/campanias"
+                  className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+                >
+                  Ver campañas
+                </Link>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
     </div>
   );
 }
@@ -507,14 +521,58 @@ function Field({
   placeholder?: string;
 }) {
   return (
-    <label className="grid gap-1 text-sm">
+    <label className="grid gap-1.5 text-sm">
       <span className="text-slate-700">{label}</span>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-500"
+        className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-slate-500"
+      />
+    </label>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="text-slate-700">{label}</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-slate-500"
+      />
+    </label>
+  );
+}
+
+function TimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="text-slate-700">{label}</span>
+      <input
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-slate-500"
       />
     </label>
   );
@@ -534,13 +592,13 @@ function SelectField({
   disabled?: boolean;
 }) {
   return (
-    <label className="grid gap-1 text-sm">
+    <label className="grid gap-1.5 text-sm">
       <span className="text-slate-700">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-500 disabled:opacity-50"
+        className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-slate-500 disabled:opacity-50"
       >
         <option value="">Seleccionar...</option>
         {options.map((opt) => (

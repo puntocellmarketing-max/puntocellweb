@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p $PORT"
+    "start": "next start -p 3000"
   },
   "dependencies": {
     "@radix-ui/react-separator": "^1.1.8",

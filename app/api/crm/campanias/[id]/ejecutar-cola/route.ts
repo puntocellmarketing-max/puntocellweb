@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
-
-type ExecuteQueuePayload = {
-  idCampania: number;
-  limit?: number;
-};
 
 type QueueRow = RowDataPacket & {
   id_envio: number;
@@ -89,10 +84,16 @@ async function sendTemplateMessage(params: {
   };
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   let conn: PoolConnection | null = null;
 
   try {
+    const { id } = await params;
+    const idCampania = Number(id);
+
     const token =
       process.env.WHATSAPP_CLOUD_API_TOKEN ||
       process.env.WHATSAPP_TOKEN ||
@@ -117,19 +118,22 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = (await req.json()) as ExecuteQueuePayload;
-
-    const idCampania = Number(body?.idCampania ?? 0);
-    const limit = safeInt(body?.limit ?? 50, 50, 1, 500);
-
     if (!Number.isFinite(idCampania) || idCampania <= 0) {
       return NextResponse.json(
-        { ok: false, error: "idCampania inválido." },
+        { ok: false, error: "ID de campaña inválido." },
         { status: 400 }
       );
     }
 
-    conn = await pool.getConnection();
+    let limit = 50;
+    try {
+      const body = await req.json();
+      limit = safeInt(body?.limit ?? 50, 50, 1, 500);
+    } catch {
+      limit = 50;
+    }
+
+    conn = await crmPool.getConnection();
     await conn.beginTransaction();
 
     const [rows] = await conn.query<QueueRow[]>(
@@ -165,6 +169,7 @@ export async function POST(req: Request) {
 
     let sentCount = 0;
     let failCount = 0;
+
     const details: Array<{
       idEnvio: number;
       telefono: string;
@@ -205,7 +210,8 @@ export async function POST(req: Request) {
             estado = 'SENT',
             id_mensaje_whatsapp = ?,
             error_mensaje = NULL,
-            fecha_envio = NOW()
+            fecha_envio = NOW(),
+            intentos = COALESCE(intentos, 0) + 1
           WHERE id_envio = ?
           `,
           [result.messageId, row.id_envio]
@@ -247,18 +253,29 @@ export async function POST(req: Request) {
       }
     }
 
+    const [[pendingRow]] = await conn.query<RowDataPacket[]>(
+      `
+      SELECT COUNT(*) AS totalPendientes
+      FROM envios_whatsapp
+      WHERE id_campania = ?
+        AND estado = 'QUEUED'
+      `,
+      [idCampania]
+    );
+
+    const totalPendientes = Number(pendingRow?.totalPendientes ?? 0);
+    const nuevoEstado = totalPendientes > 0 ? "ENVIANDO" : "FINALIZADA";
+
     await conn.execute(
       `
       UPDATE campanias
       SET
-        estado = CASE
-          WHEN ? > 0 THEN 'ENVIANDO'
-          ELSE estado
-        END,
+        estado = ?,
+        total_enviados = COALESCE(total_enviados, 0) + ?,
         total_error = COALESCE(total_error, 0) + ?
       WHERE id_campania = ?
       `,
-      [sentCount, failCount, idCampania]
+      [nuevoEstado, sentCount, failCount, idCampania]
     );
 
     await conn.commit();
@@ -271,6 +288,8 @@ export async function POST(req: Request) {
         procesados: rows.length,
         enviados: sentCount,
         fallidos: failCount,
+        pendientes: totalPendientes,
+        estadoCampania: nuevoEstado,
       },
       details,
     });

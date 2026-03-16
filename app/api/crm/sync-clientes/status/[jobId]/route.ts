@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { dbQuery } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
+import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
 
-type JobRow = {
+type JobRow = RowDataPacket & {
   job_id: string;
   status: "idle" | "running" | "success" | "error";
   stage: string;
@@ -17,7 +18,7 @@ type JobRow = {
   finished_at: string | null;
 };
 
-type LogRow = {
+type LogRow = RowDataPacket & {
   level: "info" | "success" | "error";
   message: string;
   created_at: string;
@@ -30,7 +31,7 @@ export async function GET(
   try {
     const { jobId } = await context.params;
 
-    const jobs = await dbQuery<JobRow[]>(
+    const [jobs] = await crmPool.query<JobRow[]>(
       `
       SELECT
         job_id,
@@ -58,7 +59,7 @@ export async function GET(
       );
     }
 
-    const logs = await dbQuery<LogRow[]>(
+    const [logs] = await crmPool.query<LogRow[]>(
       `
       SELECT level, message, created_at
       FROM crm_sync_job_logs

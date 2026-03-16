@@ -1,367 +1,471 @@
 import Link from "next/link";
 
+type Status = "OPERATIVO" | "PARCIAL" | "PENDIENTE";
+
+type QuickAccess = {
+  title: string;
+  description: string;
+  href: string;
+  primary?: boolean;
+};
+
+type FlowStep = {
+  step: string;
+  title: string;
+  description: string;
+  href?: string;
+  cta: string;
+  status: Status;
+};
+
 type ModuleCard = {
   title: string;
   description: string;
   href?: string;
-  status: "DISPONIBLE" | "EN CONSTRUCCION";
+  status: Status;
   cta: string;
-  step: string;
 };
 
-const modules: ModuleCard[] = [
+type ControlItem = {
+  title: string;
+  value: string;
+  helper: string;
+};
+
+const quickAccess: QuickAccess[] = [
+  {
+    title: "Iniciar sync",
+    description: "Traer clientes filtrados desde el sistema local.",
+    href: "/crm/sync-clientes",
+    primary: true,
+  },
+  {
+    title: "Audiencias",
+    description: "Congelar clientes listos para campaña.",
+    href: "/crm/audiencias",
+  },
+  {
+    title: "Campañas",
+    description: "Preparar campaña, cola y ejecución.",
+    href: "/crm/campanias",
+  },
+  {
+    title: "Inbox",
+    description: "Responder conversaciones y continuar gestión.",
+    href: "/crm/conversaciones",
+  },
+  {
+    title: "Agenda",
+    description: "Registrar seguimiento y promesas de pago.",
+    href: "/crm/agendar",
+  },
+];
+
+const flowSteps: FlowStep[] = [
   {
     step: "01",
     title: "Sincronizar clientes",
-    description:
-      "Ejecuta el sync filtrado desde la vista local hacia crm_clientes_sync, dejando trazabilidad por job_id.",
+    description: "Subir clientes filtrados y dejar trazabilidad por job.",
     href: "/crm/sync-clientes",
-    status: "DISPONIBLE",
     cta: "Abrir sync",
+    status: "OPERATIVO",
   },
   {
     step: "02",
-    title: "Audiencias",
-    description:
-      "Crear y administrar audiencias generadas desde una corrida de sync, con su detalle congelado para campañas.",
-    status: "EN CONSTRUCCION",
-    cta: "Próxima fase",
+    title: "Validar teléfonos",
+    description: "Revisar números válidos, inválidos o pendientes.",
+    href: "/crm/sync-clientes",
+    cta: "Revisar sync",
+    status: "PARCIAL",
   },
   {
     step: "03",
-    title: "Campañas",
-    description:
-      "Crear campañas desde audiencias, ver su estado, plantilla, ventana de análisis y métricas operativas.",
-    status: "EN CONSTRUCCION",
-    cta: "Próxima fase",
+    title: "Crear audiencia",
+    description: "Congelar la selección de clientes para campañas.",
+    href: "/crm/audiencias",
+    cta: "Abrir audiencias",
+    status: "OPERATIVO",
   },
   {
     step: "04",
-    title: "Conversaciones",
-    description:
-      "Inbox operativo para ver chats, responder, marcar leídos y registrar seguimiento manual.",
-    status: "EN CONSTRUCCION",
-    cta: "Próxima fase",
+    title: "Crear campaña",
+    description: "Definir campaña, plantilla, idioma y análisis.",
+    href: "/crm/campanias",
+    cta: "Abrir campañas",
+    status: "PARCIAL",
   },
   {
     step: "05",
-    title: "Resultados y reportes",
-    description:
-      "Analizar entregados, leídos, respuestas, pagos posteriores y recuperación por campaña.",
-    status: "EN CONSTRUCCION",
-    cta: "Próxima fase",
+    title: "Generar y enviar",
+    description: "Preparar cola, ejecutar envío y revisar estados.",
+    href: "/crm/campanias",
+    cta: "Gestionar envíos",
+    status: "PARCIAL",
+  },
+  {
+    step: "06",
+    title: "Operar conversaciones",
+    description: "Responder, marcar leído y continuar gestión.",
+    href: "/crm/conversaciones",
+    cta: "Abrir inbox",
+    status: "OPERATIVO",
+  },
+  {
+    step: "07",
+    title: "Agendar seguimiento",
+    description: "Registrar gestión, promesa y recordatorio.",
+    href: "/crm/agendar",
+    cta: "Abrir agenda",
+    status: "OPERATIVO",
+  },
+  {
+    step: "08",
+    title: "Verificar resultados",
+    description: "Controlar pagos, recuperación y reportes.",
+    href: "/crm/reportes",
+    cta: "Abrir reportes",
+    status: "PENDIENTE",
   },
 ];
 
-const flowSteps = [
+const modules: ModuleCard[] = [
   {
-    title: "Sync filtrado",
-    text: "Traer solo clientes notificables desde la base del sistema y dejarlos trazables por corrida.",
+    title: "Sync clientes",
+    description: "Entrada del circuito operativo.",
+    href: "/crm/sync-clientes",
+    status: "OPERATIVO",
+    cta: "Abrir",
   },
   {
-    title: "Crear audiencia",
-    text: "Congelar la selección de clientes con su snapshot técnico y comercial.",
+    title: "Audiencias",
+    description: "Snapshot de clientes listos para campaña.",
+    href: "/crm/audiencias",
+    status: "OPERATIVO",
+    cta: "Abrir",
   },
   {
-    title: "Crear campaña",
-    text: "Definir plantilla, tipo, idioma y ventana de análisis sobre una audiencia existente.",
+    title: "Campañas",
+    description: "Gestión de campañas, cola y envío.",
+    href: "/crm/campanias",
+    status: "PARCIAL",
+    cta: "Abrir",
   },
   {
-    title: "Generar cola",
-    text: "Materializar los envíos en envios_whatsapp y dejar todo listo para ejecución.",
+    title: "Conversaciones",
+    description: "Inbox operativo y respuesta manual.",
+    href: "/crm/conversaciones",
+    status: "OPERATIVO",
+    cta: "Abrir",
   },
   {
-    title: "Enviar y medir",
-    text: "Ejecutar la campaña, recibir webhooks, medir respuestas y pagos posteriores.",
+    title: "Agenda",
+    description: "Seguimiento por cobrador y promesas.",
+    href: "/crm/agendar",
+    status: "OPERATIVO",
+    cta: "Abrir",
+  },
+  {
+    title: "Reportes",
+    description: "Resultados, pagos y recuperación.",
+    href: "/crm/reportes",
+    status: "PENDIENTE",
+    cta: "Pendiente",
   },
 ];
 
-function StatusBadge({ status }: { status: ModuleCard["status"] }) {
-  const styles =
-    status === "DISPONIBLE"
-      ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-      : "bg-amber-100 text-amber-800 border-amber-200";
+const controlItems: ControlItem[] = [
+  {
+    title: "Inicio del flujo",
+    value: "Sync",
+    helper: "Toda operación debe arrancar desde clientes sincronizados.",
+  },
+  {
+    title: "Siguiente foco",
+    value: "Campañas",
+    helper: "Ya podés crear audiencias desde sync y continuar el flujo.",
+  },
+  {
+    title: "Uso diario",
+    value: "Inbox + Agenda",
+    helper: "Gestión operativa posterior al envío.",
+  },
+  {
+    title: "Cierre final",
+    value: "Pago + Reporte",
+    helper: "El circuito termina con resultado verificado.",
+  },
+];
 
+function statusClasses(status: Status) {
+  switch (status) {
+    case "OPERATIVO":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "PARCIAL":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    default:
+      return "border-slate-200 bg-slate-100 text-slate-600";
+  }
+}
+
+function StatusBadge({ status }: { status: Status }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles}`}
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${statusClasses(
+        status
+      )}`}
     >
-      {status === "DISPONIBLE" ? "Disponible" : "En construcción"}
+      {status}
     </span>
   );
 }
 
-function CardAction({
-  href,
-  cta,
-  disabled,
+function SectionHeader({
+  title,
+  subtitle,
 }: {
-  href?: string;
-  cta: string;
-  disabled?: boolean;
+  title: string;
+  subtitle?: string;
 }) {
-  if (disabled || !href) {
-    return (
-      <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-500">
-        {cta}
-      </span>
-    );
-  }
+  return (
+    <div className="flex flex-col gap-1">
+      <h2 className="text-xl font-semibold tracking-tight text-slate-950 md:text-2xl">
+        {title}
+      </h2>
+      {subtitle ? (
+        <p className="text-sm leading-6 text-slate-600">{subtitle}</p>
+      ) : null}
+    </div>
+  );
+}
 
+function QuickAccessCard({
+  title,
+  description,
+  href,
+  primary = false,
+}: QuickAccess) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+      className={`rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        primary
+          ? "border-slate-950 bg-slate-950 text-white"
+          : "border-slate-200 bg-white text-slate-950"
+      }`}
     >
-      {cta}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div
+            className={`text-base font-semibold ${
+              primary ? "text-white" : "text-slate-950"
+            }`}
+          >
+            {title}
+          </div>
+          <div
+            className={`mt-2 text-sm leading-6 ${
+              primary ? "text-slate-300" : "text-slate-600"
+            }`}
+          >
+            {description}
+          </div>
+        </div>
+
+        <div
+          className={`rounded-xl border px-3 py-1 text-xs font-semibold ${
+            primary
+              ? "border-white/15 bg-white/10 text-white"
+              : "border-slate-200 bg-slate-50 text-slate-700"
+          }`}
+        >
+          Abrir
+        </div>
+      </div>
     </Link>
+  );
+}
+
+function FlowCard({ step, title, description, href, cta, status }: FlowStep) {
+  const disabled = status === "PENDIENTE";
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-sm font-semibold text-white">
+          {step}
+        </div>
+        <StatusBadge status={status} />
+      </div>
+
+      <h3 className="mt-4 text-base font-semibold text-slate-950">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+
+      <div className="mt-5">
+        {disabled || !href ? (
+          <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-400">
+            {cta}
+          </span>
+        ) : (
+          <Link
+            href={href}
+            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+          >
+            {cta}
+          </Link>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ModuleSystemCard({
+  title,
+  description,
+  href,
+  status,
+  cta,
+}: ModuleCard) {
+  const disabled = status === "PENDIENTE";
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-base font-semibold text-slate-950">{title}</h3>
+        <StatusBadge status={status} />
+      </div>
+
+      <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+
+      <div className="mt-5">
+        {disabled || !href ? (
+          <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-400">
+            {cta}
+          </span>
+        ) : (
+          <Link
+            href={href}
+            className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+          >
+            {cta}
+          </Link>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ControlCard({ title, value, helper }: ControlItem) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {title}
+      </div>
+      <div className="mt-3 text-xl font-semibold text-slate-950">{value}</div>
+      <div className="mt-2 text-sm leading-6 text-slate-600">{helper}</div>
+    </div>
   );
 }
 
 export default function CRMHomePage() {
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-8 md:px-6 lg:px-8">
-        {/* Hero */}
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-8 p-6 md:grid-cols-[1.4fr_.9fr] md:p-8">
-            <div>
-              <div className="mb-3 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                CRM de Cobranzas por WhatsApp Cloud API
-              </div>
-
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
-                Panel principal del CRM
-              </h1>
-
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
-                Desde este panel vas a poder controlar el flujo completo del sistema:
-                sincronización filtrada, audiencias, campañas, cola de envíos,
-                seguimiento de conversaciones y análisis de resultados.
-              </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link
-                  href="/crm/sync-clientes"
-                  className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-700"
-                >
-                  Iniciar flujo desde sync
-                </Link>
-
-                <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-medium text-slate-500">
-                  Audiencias y campañas: siguiente fase
-                </span>
-              </div>
+    <div className="space-y-10">
+      <section className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-slate-950 px-6 py-6 text-white md:px-8">
+            <div className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-200">
+              Flujo de trabajo
             </div>
 
-            <div className="grid gap-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Estado actual
-                </div>
-                <div className="mt-2 text-sm text-slate-700">
-                  Ya están validadas las bases del flujo:
-                </div>
-                <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                  <li>• Sync filtrado con job_id</li>
-                  <li>• Creación de audiencia desde sync</li>
-                  <li>• Creación de campaña desde audiencia</li>
-                </ul>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Próximo objetivo
-                </div>
-                <div className="mt-2 text-sm text-slate-700">
-                  Generar y operar la cola de envíos desde la interfaz del sistema,
-                  sin depender de PowerShell ni pruebas manuales.
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* KPIs estáticos de fase */}
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Fase actual
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-slate-900">
-              5A.1
-            </div>
-            <div className="mt-1 text-sm text-slate-600">
-              Ordenando la operación desde la interfaz principal.
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Back-end validado
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-slate-900">
-              3 fases
-            </div>
-            <div className="mt-1 text-sm text-slate-600">
-              Sync, audiencia y campaña ya probados en base de datos.
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Prioridad operativa
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-slate-900">
-              Cola
-            </div>
-            <div className="mt-1 text-sm text-slate-600">
-              El siguiente paso es controlar la cola y el envío desde pantalla.
-            </div>
-          </div>
-        </section>
-
-        {/* Módulos */}
-        <section className="mt-8">
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold text-slate-900">
-              Módulos del sistema
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight md:text-3xl">
+              Orden operativo del CRM
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Esta vista organiza el CRM por etapas funcionales para que el flujo
-              quede claro y controlado.
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              Sync → Validación → Audiencia → Campaña → Envío → Inbox → Agenda →
+              Reporte
             </p>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {modules.map((module) => (
-              <article
-                key={module.step + module.title}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
-                    {module.step}
-                  </div>
-                  <StatusBadge status={module.status} />
-                </div>
-
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">
-                  {module.title}
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  {module.description}
-                </p>
-
-                <div className="mt-5">
-                  <CardAction
-                    href={module.href}
-                    cta={module.cta}
-                    disabled={module.status !== "DISPONIBLE"}
-                  />
-                </div>
-              </article>
+          <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-3 md:p-8">
+            {quickAccess.map((item) => (
+              <QuickAccessCard key={item.title} {...item} />
             ))}
           </div>
-        </section>
+        </div>
 
-        {/* Flujo operativo */}
-        <section className="mt-10 grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-slate-900">
-              Flujo operativo del CRM
+        <aside className="grid gap-4">
+          {controlItems.map((item) => (
+            <ControlCard key={item.title} {...item} />
+          ))}
+        </aside>
+      </section>
+
+      <section>
+        <SectionHeader
+          title="Fases del proceso"
+          subtitle="Entrá a cada etapa según el avance operativo."
+        />
+
+        <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {flowSteps.map((item) => (
+            <FlowCard key={item.step + item.title} {...item} />
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <SectionHeader
+          title="Módulos del sistema"
+          subtitle="Acceso rápido a las pantallas principales del CRM."
+        />
+
+        <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {modules.map((module) => (
+            <ModuleSystemCard key={module.title} {...module} />
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">
+              Control operativo
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Este es el proceso ideal que vamos a dejar completamente operable desde la interfaz.
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Antes de enviar, validá teléfonos, creá audiencia y luego avanzá con
+              campañas, inbox y agenda.
             </p>
-
-            <div className="mt-6 space-y-4">
-              {flowSteps.map((step, index) => (
-                <div
-                  key={step.title}
-                  className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">
-                    {index + 1}
-                  </div>
-
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {step.title}
-                    </div>
-                    <div className="mt-1 text-sm leading-6 text-slate-600">
-                      {step.text}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-slate-900">
-              Buenas prácticas del flujo
-            </h2>
-
-            <div className="mt-5 space-y-4 text-sm leading-6 text-slate-600">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900">
-                  1. No mezclar prueba y producción
-                </div>
-                <div className="mt-1">
-                  Las campañas de prueba deben trabajar con audiencias pequeñas y teléfonos controlados.
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900">
-                  2. Toda acción importante debe quedar trazada
-                </div>
-                <div className="mt-1">
-                  Jobs, audiencias, campañas, cola y resultados deben poder reconstruirse después.
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900">
-                  3. Un paso por vez
-                </div>
-                <div className="mt-1">
-                  Primero consolidamos la interfaz y recién después abrimos ejecución real y análisis.
-                </div>
-              </div>
-            </div>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/crm/sync-clientes"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Validar datos
+            </Link>
+            <Link
+              href="/crm/audiencias"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Crear audiencia
+            </Link>
+            <Link
+              href="/crm/conversaciones"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Revisar inbox
+            </Link>
+            <Link
+              href="/crm/agendar"
+              className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              Registrar seguimiento
+            </Link>
           </div>
-        </section>
-
-        {/* Footer operativo */}
-        <section className="mt-10 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">
-                Siguiente entrega recomendada
-              </h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Crear el módulo de campañas para operar la generación de cola y luego el envío real desde la interfaz.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/crm/sync-clientes"
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
-              >
-                Ir a Sync
-              </Link>
-
-              <span className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white">
-                Próxima fase: Campañas
-              </span>
-            </div>
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }

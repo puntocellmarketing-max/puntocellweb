@@ -1,16 +1,25 @@
 import { NextResponse } from "next/server";
-import { dbQuery } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
+import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
 
-type CampaignRow = {
+type CampaignRow = RowDataPacket & {
   id_campania: number;
   id_audiencia: number | null;
   nombre: string;
-  tipo: string | null;
+  tipo: "VENCIMIENTO" | "ATRASO" | "GENERAL" | null;
   plantilla: string | null;
   idioma: string | null;
-  estado: string | null;
+  estado:
+    | "BORRADOR"
+    | "LISTA"
+    | "ENVIANDO"
+    | "FINALIZADA"
+    | "PAUSADA"
+    | "CANCELADA"
+    | "ANALIZADA"
+    | null;
   fecha_lanzamiento: string | null;
   fecha_creacion: string | null;
   ventana_analisis_dias: number | null;
@@ -27,39 +36,45 @@ type CampaignRow = {
   filtros_json: string | null;
 };
 
-type AudienceDetailRow = {
-  id_detalle: number;
+type AudienceRow = RowDataPacket & {
   id_audiencia: number;
-  cod_cliente: number;
-  cliente: string;
-  telefono: string | null;
-  telefono_valido: number;
-  requiere_revision: number;
-  dias_atraso: number | null;
-  ultimo_pago: string | null;
-  saldo: number | null;
-  categoria: string | null;
-  zona: string | null;
-  estado_envio: string;
-  lote_numero: number | null;
+  nombre: string;
+  descripcion: string | null;
+  origen: string;
+  job_id_origen: string | null;
+  total_clientes: number;
+  total_validos: number;
+  total_invalidos: number;
+  estado: string;
+  fecha_creacion: string | null;
+};
+
+type QueueSummaryRow = RowDataPacket & {
+  totalCola: number;
+  totalQueued: number;
+  totalSending: number;
+  totalSent: number;
+  totalDelivered: number;
+  totalRead: number;
+  totalFailed: number;
+  totalCanceled: number;
 };
 
 export async function GET(
   _req: Request,
-  context: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await context.params;
-    const idCampania = Number(id);
+    const idCampania = Number(params.id);
 
-    if (!Number.isFinite(idCampania) || idCampania <= 0) {
+    if (!Number.isInteger(idCampania) || idCampania <= 0) {
       return NextResponse.json(
         { ok: false, error: "ID de campaña inválido." },
         { status: 400 }
       );
     }
 
-    const campaignRows = await dbQuery<CampaignRow[]>(
+    const [campRows] = await crmPool.query<CampaignRow[]>(
       `
       SELECT
         id_campania,
@@ -90,89 +105,120 @@ export async function GET(
       [idCampania]
     );
 
-    if (!campaignRows.length) {
+    if (!campRows.length) {
       return NextResponse.json(
         { ok: false, error: "Campaña no encontrada." },
         { status: 404 }
       );
     }
 
-    const campaign = campaignRows[0];
+    const camp = campRows[0];
 
-    let destinatarios: AudienceDetailRow[] = [];
+    let audience: AudienceRow | null = null;
 
-    if (campaign.id_audiencia) {
-      destinatarios = await dbQuery<AudienceDetailRow[]>(
+    if (camp.id_audiencia) {
+      const [audRows] = await crmPool.query<AudienceRow[]>(
         `
         SELECT
-          id_detalle,
           id_audiencia,
-          cod_cliente,
-          cliente,
-          telefono,
-          telefono_valido,
-          requiere_revision,
-          dias_atraso,
-          ultimo_pago,
-          saldo,
-          categoria,
-          zona,
-          estado_envio,
-          lote_numero
-        FROM crm_audiencia_detalle
+          nombre,
+          descripcion,
+          origen,
+          job_id_origen,
+          total_clientes,
+          total_validos,
+          total_invalidos,
+          estado,
+          fecha_creacion
+        FROM crm_audiencias
         WHERE id_audiencia = ?
-        ORDER BY lote_numero ASC, cod_cliente ASC
-        LIMIT 200
+        LIMIT 1
         `,
-        [campaign.id_audiencia]
+        [camp.id_audiencia]
       );
+
+      audience = audRows[0] || null;
     }
+
+    const [queueRows] = await crmPool.query<QueueSummaryRow[]>(
+      `
+      SELECT
+        COUNT(*) AS totalCola,
+        COALESCE(SUM(CASE WHEN estado = 'QUEUED' THEN 1 ELSE 0 END), 0) AS totalQueued,
+        COALESCE(SUM(CASE WHEN estado = 'SENDING' THEN 1 ELSE 0 END), 0) AS totalSending,
+        COALESCE(SUM(CASE WHEN estado = 'SENT' THEN 1 ELSE 0 END), 0) AS totalSent,
+        COALESCE(SUM(CASE WHEN estado = 'DELIVERED' THEN 1 ELSE 0 END), 0) AS totalDelivered,
+        COALESCE(SUM(CASE WHEN estado = 'READ' THEN 1 ELSE 0 END), 0) AS totalRead,
+        COALESCE(SUM(CASE WHEN estado = 'FAILED' THEN 1 ELSE 0 END), 0) AS totalFailed,
+        COALESCE(SUM(CASE WHEN estado = 'CANCELED' THEN 1 ELSE 0 END), 0) AS totalCanceled
+      FROM envios_whatsapp
+      WHERE id_campania = ?
+      `,
+      [idCampania]
+    );
+
+    const queue = queueRows[0] || {
+      totalCola: 0,
+      totalQueued: 0,
+      totalSending: 0,
+      totalSent: 0,
+      totalDelivered: 0,
+      totalRead: 0,
+      totalFailed: 0,
+      totalCanceled: 0,
+    };
 
     return NextResponse.json({
       ok: true,
-      campaign: {
-        idCampania: Number(campaign.id_campania),
-        idAudiencia:
-          campaign.id_audiencia !== null ? Number(campaign.id_audiencia) : null,
-        nombre: campaign.nombre,
-        tipo: campaign.tipo,
-        plantilla: campaign.plantilla,
-        idioma: campaign.idioma || "es",
-        estado: campaign.estado,
-        fechaLanzamiento: campaign.fecha_lanzamiento,
-        fechaCreacion: campaign.fecha_creacion,
-        ventanaAnalisisDias: Number(campaign.ventana_analisis_dias ?? 0),
-        totalAudiencia: Number(campaign.total_audiencia ?? 0),
-        totalEnviados: Number(campaign.total_enviados ?? 0),
-        totalError: Number(campaign.total_error ?? 0),
-        totalEntregados: Number(campaign.total_entregados ?? 0),
-        totalLeidos: Number(campaign.total_leidos ?? 0),
-        totalRespondieron: Number(campaign.total_respondieron ?? 0),
-        totalPagaron: Number(campaign.total_pagaron ?? 0),
-        montoTotalPagado: Number(campaign.monto_total_pagado ?? 0),
-        creadoPor: campaign.creado_por,
-        observaciones: campaign.observaciones,
-        filtrosJson: campaign.filtros_json,
+      campania: {
+        idCampania: Number(camp.id_campania),
+        idAudiencia: camp.id_audiencia !== null ? Number(camp.id_audiencia) : null,
+        nombre: camp.nombre,
+        tipo: camp.tipo,
+        plantilla: camp.plantilla,
+        idioma: camp.idioma || "es",
+        estado: camp.estado,
+        fechaLanzamiento: camp.fecha_lanzamiento,
+        fechaCreacion: camp.fecha_creacion,
+        ventanaAnalisisDias: Number(camp.ventana_analisis_dias ?? 0),
+        totalAudiencia: Number(camp.total_audiencia ?? 0),
+        totalEnviados: Number(camp.total_enviados ?? 0),
+        totalError: Number(camp.total_error ?? 0),
+        totalEntregados: Number(camp.total_entregados ?? 0),
+        totalLeidos: Number(camp.total_leidos ?? 0),
+        totalRespondieron: Number(camp.total_respondieron ?? 0),
+        totalPagaron: Number(camp.total_pagaron ?? 0),
+        montoTotalPagado: Number(camp.monto_total_pagado ?? 0),
+        creadoPor: camp.creado_por,
+        observaciones: camp.observaciones,
+        filtrosJson: camp.filtros_json,
       },
-      destinatarios: destinatarios.map((d) => ({
-        idDetalle: Number(d.id_detalle),
-        idAudiencia: Number(d.id_audiencia),
-        codCliente: Number(d.cod_cliente),
-        cliente: d.cliente,
-        telefono: d.telefono,
-        telefonoValido: Number(d.telefono_valido ?? 0),
-        requiereRevision: Number(d.requiere_revision ?? 0),
-        diasAtraso: Number(d.dias_atraso ?? 0),
-        ultimoPago: d.ultimo_pago,
-        saldo: Number(d.saldo ?? 0),
-        categoria: d.categoria,
-        zona: d.zona,
-        estadoEnvio: d.estado_envio,
-        loteNumero: Number(d.lote_numero ?? 0),
-      })),
+      audiencia: audience
+        ? {
+            idAudiencia: Number(audience.id_audiencia),
+            nombre: audience.nombre,
+            descripcion: audience.descripcion,
+            origen: audience.origen,
+            jobIdOrigen: audience.job_id_origen,
+            totalClientes: Number(audience.total_clientes ?? 0),
+            totalValidos: Number(audience.total_validos ?? 0),
+            totalInvalidos: Number(audience.total_invalidos ?? 0),
+            estado: audience.estado,
+            fechaCreacion: audience.fecha_creacion,
+          }
+        : null,
+      cola: {
+        totalCola: Number(queue.totalCola ?? 0),
+        totalQueued: Number(queue.totalQueued ?? 0),
+        totalSending: Number(queue.totalSending ?? 0),
+        totalSent: Number(queue.totalSent ?? 0),
+        totalDelivered: Number(queue.totalDelivered ?? 0),
+        totalRead: Number(queue.totalRead ?? 0),
+        totalFailed: Number(queue.totalFailed ?? 0),
+        totalCanceled: Number(queue.totalCanceled ?? 0),
+      },
     });
   } catch (e: any) {
-    console.error("Error /api/crm/campanias/[id]:", e);
     return NextResponse.json(
       { ok: false, error: e?.message || String(e) },
       { status: 500 }

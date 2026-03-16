@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
-import { dbQuery } from "../../../../../lib/db";
+import { crmPool } from "@/lib/db-crm";
 
 export const runtime = "nodejs";
 
@@ -58,7 +58,7 @@ function isValidDateOnly(value: string | null): boolean {
 }
 
 async function createJob(jobId: string, filtersJson: string | null) {
-  await dbQuery(
+  await crmPool.execute(
     `
     INSERT INTO crm_sync_jobs (
       job_id, status, stage, progress,
@@ -75,7 +75,7 @@ async function appendLog(
   level: "info" | "success" | "error",
   message: string
 ) {
-  await dbQuery(
+  await crmPool.execute(
     `
     INSERT INTO crm_sync_job_logs (job_id, level, message)
     VALUES (?, ?, ?)
@@ -141,7 +141,7 @@ async function updateJob(
 
   params.push(jobId);
 
-  await dbQuery(
+  await crmPool.execute(
     `
     UPDATE crm_sync_jobs
     SET ${sets.join(", ")}
@@ -177,8 +177,10 @@ export async function POST(req: Request) {
 
     const categoria = String(body.filters?.categoria || "").trim() || null;
     const zona = String(body.filters?.zona || "").trim() || null;
-    const ultimoPagoDesde = String(body.filters?.ultimoPagoDesde || "").trim() || null;
-    const ultimoPagoHasta = String(body.filters?.ultimoPagoHasta || "").trim() || null;
+    const ultimoPagoDesde =
+      String(body.filters?.ultimoPagoDesde || "").trim() || null;
+    const ultimoPagoHasta =
+      String(body.filters?.ultimoPagoHasta || "").trim() || null;
     const diasAtrasoMin = safeNumberOrNull(body.filters?.diasAtrasoMin);
     const saldoMin = safeNumberOrNull(body.filters?.saldoMin);
     const soloTelefonosValidos = body.filters?.soloTelefonosValidos !== false;
@@ -219,7 +221,10 @@ export async function POST(req: Request) {
 
     if (ultimoPagoDesde && ultimoPagoHasta && ultimoPagoDesde > ultimoPagoHasta) {
       return NextResponse.json(
-        { ok: false, error: "ultimoPagoDesde no puede ser mayor que ultimoPagoHasta." },
+        {
+          ok: false,
+          error: "ultimoPagoDesde no puede ser mayor que ultimoPagoHasta.",
+        },
         { status: 400 }
       );
     }
@@ -416,7 +421,11 @@ async function runSyncJob(
         progress: 100,
         finished: true,
       });
-      await appendLog(jobId, "success", "No hay registros para sincronizar con los filtros aplicados.");
+      await appendLog(
+        jobId,
+        "success",
+        "No hay registros para sincronizar con los filtros aplicados."
+      );
       return;
     }
 

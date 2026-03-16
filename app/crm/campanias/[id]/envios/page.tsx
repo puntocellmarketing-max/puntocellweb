@@ -1,10 +1,10 @@
-import CampaignDetailPanel from "@/components/crm/CampaignDetailPanel";
+import CampaignOperationsPanel from "@/components/crm/CampaignOperationsPanel";
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-export default async function CampaignDetailPage({ params }: PageProps) {
+export default async function CampaignOperationsPage({ params }: PageProps) {
   const { id } = await params;
   const idCampania = Number(id);
 
@@ -23,7 +23,7 @@ export default async function CampaignDetailPage({ params }: PageProps) {
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-7xl">
-        <CampaignDetailPanel idCampania={idCampania} />
+        <CampaignOperationsPanel idCampania={idCampania} />
       </div>
     </main>
   );
