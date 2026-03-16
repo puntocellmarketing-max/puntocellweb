@@ -5,11 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Conversation = {
   telefono: string;
-  cod_cliente: number | null;
-  ultimo_mensaje: string | null;
-  ultimo_tipo: "IN" | "OUT" | null;
-  ultimo_at: string | null;
-  unread_count: number;
+  codCliente: number | null;
+  cliente: string | null;
+  ultimoMensaje: string | null;
+  ultimoTipo: "IN" | "OUT" | null;
+  ultimoAt: string | null;
+  unreadCount: number;
   estado: string;
 };
 
@@ -50,6 +51,16 @@ function formatDateShort(value?: string | null) {
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
+  });
+}
+
+function formatTimeOnly(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("es-PY", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -96,8 +107,12 @@ function outStatusBadgeClasses(status?: string | null) {
   }
 }
 
-function getConversationName(c: Conversation) {
-  if (c.cod_cliente) return `Cliente #${c.cod_cliente}`;
+function getConversationTitle(c: Conversation) {
+  return c.cliente || c.telefono;
+}
+
+function getConversationSubtitle(c: Conversation) {
+  if (c.codCliente) return `Cliente #${c.codCliente}`;
   return "Sin cliente asociado";
 }
 
@@ -134,6 +149,7 @@ export default function CRMConversationsPage() {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [selectedPhone, setSelectedPhone] = useState("");
   const [selectedCodCliente, setSelectedCodCliente] = useState<number | null>(null);
+  const [selectedCliente, setSelectedCliente] = useState<string | null>(null);
   const [selectedEstado, setSelectedEstado] = useState("");
 
   const [chatStatus, setChatStatus] = useState("");
@@ -153,7 +169,15 @@ export default function CRMConversationsPage() {
     try {
       setRefreshing(true);
 
-      const res = await fetch("/api/crm/conversaciones?limit=150", {
+      const params = new URLSearchParams();
+      params.set("limit", "150");
+      if (search.trim()) params.set("q", search.trim());
+      if (estadoFilter && estadoFilter !== "TODOS") {
+        params.set("estado", estadoFilter);
+      }
+      if (onlyUnread) params.set("soloNoLeidos", "1");
+
+      const res = await fetch(`/api/crm/conversaciones?${params.toString()}`, {
         cache: "no-store",
       });
 
@@ -169,7 +193,8 @@ export default function CRMConversationsPage() {
       if (selectedPhone) {
         const current = rows.find((r) => r.telefono === selectedPhone);
         if (current) {
-          setSelectedCodCliente(current.cod_cliente ?? null);
+          setSelectedCodCliente(current.codCliente ?? null);
+          setSelectedCliente(current.cliente ?? null);
           setSelectedEstado(current.estado ?? "");
         }
       }
@@ -221,7 +246,8 @@ export default function CRMConversationsPage() {
 
   async function openConversation(c: Conversation) {
     setSelectedPhone(c.telefono);
-    setSelectedCodCliente(c.cod_cliente ?? null);
+    setSelectedCodCliente(c.codCliente ?? null);
+    setSelectedCliente(c.cliente ?? null);
     setSelectedEstado(c.estado ?? "");
 
     await loadChat(c.telefono);
@@ -290,23 +316,17 @@ export default function CRMConversationsPage() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chat]);
 
+  useEffect(() => {
+    const t = setTimeout(() => {
+      loadConvs();
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [search, estadoFilter, onlyUnread]);
+
   const filteredConvs = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    return convs.filter((c) => {
-      const passesSearch =
-        !q ||
-        String(c.telefono || "").toLowerCase().includes(q) ||
-        String(c.ultimo_mensaje || "").toLowerCase().includes(q) ||
-        String(c.cod_cliente || "").toLowerCase().includes(q) ||
-        String(c.estado || "").toLowerCase().includes(q);
-
-      const passesEstado = estadoFilter === "TODOS" || c.estado === estadoFilter;
-      const passesUnread = !onlyUnread || Number(c.unread_count || 0) > 0;
-
-      return passesSearch && passesEstado && passesUnread;
-    });
-  }, [convs, search, estadoFilter, onlyUnread]);
+    return convs;
+  }, [convs]);
 
   const selectedConversation = useMemo(() => {
     return convs.find((c) => c.telefono === selectedPhone) || null;
@@ -315,7 +335,7 @@ export default function CRMConversationsPage() {
   const stats = useMemo(() => {
     return {
       total: convs.length,
-      nuevos: convs.filter((c) => Number(c.unread_count || 0) > 0).length,
+      nuevos: convs.filter((c) => Number(c.unreadCount || 0) > 0).length,
       promesas: convs.filter((c) => c.estado === "PROMESA").length,
       pagados: convs.filter((c) => c.estado === "PAGADO").length,
     };
@@ -397,7 +417,7 @@ export default function CRMConversationsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por teléfono, mensaje, estado o cod_cliente..."
+              placeholder="Buscar por teléfono, cliente, mensaje, estado o codCliente..."
               className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-slate-500"
             />
           </div>
@@ -472,22 +492,25 @@ export default function CRMConversationsPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="font-mono text-sm font-semibold text-slate-950">
-                          {c.telefono}
+                        <div className="text-sm font-semibold text-slate-950">
+                          {getConversationTitle(c)}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {getConversationName(c)}
+                          {getConversationSubtitle(c)}
+                        </div>
+                        <div className="mt-1 font-mono text-xs text-slate-500">
+                          {c.telefono}
                         </div>
                       </div>
 
                       <div className="text-right text-[11px] text-slate-500">
-                        <div>{formatDateShort(c.ultimo_at)}</div>
-                        <div>{formatDate(c.ultimo_at).split(",")[1] || ""}</div>
+                        <div>{formatDateShort(c.ultimoAt)}</div>
+                        <div>{formatTimeOnly(c.ultimoAt)}</div>
                       </div>
                     </div>
 
                     <div className="mt-3 line-clamp-2 min-h-[40px] text-sm text-slate-700">
-                      {c.ultimo_mensaje || (
+                      {c.ultimoMensaje || (
                         <span className="text-slate-400">(sin mensaje)</span>
                       )}
                     </div>
@@ -501,15 +524,15 @@ export default function CRMConversationsPage() {
                         {c.estado}
                       </span>
 
-                      {c.ultimo_tipo ? (
+                      {c.ultimoTipo ? (
                         <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
-                          {c.ultimo_tipo}
+                          {c.ultimoTipo}
                         </span>
                       ) : null}
 
-                      {Number(c.unread_count || 0) > 0 ? (
+                      {Number(c.unreadCount || 0) > 0 ? (
                         <span className="inline-flex items-center rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
-                          NUEVO ({c.unread_count})
+                          NUEVO ({c.unreadCount})
                         </span>
                       ) : null}
                     </div>
@@ -527,14 +550,18 @@ export default function CRMConversationsPage() {
                 Conversación seleccionada
               </div>
 
-              <div className="mt-1 font-mono text-xl font-semibold text-slate-950">
-                {selectedPhone || "Seleccioná una conversación"}
+              <div className="mt-1 text-xl font-semibold text-slate-950">
+                {selectedCliente || selectedPhone || "Seleccioná una conversación"}
+              </div>
+
+              <div className="mt-1 font-mono text-xs text-slate-500">
+                {selectedPhone || "—"}
               </div>
 
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
                   {selectedCodCliente
-                    ? `cod_cliente: ${selectedCodCliente}`
+                    ? `Cliente #${selectedCodCliente}`
                     : "Sin cod_cliente"}
                 </span>
 
@@ -548,15 +575,15 @@ export default function CRMConversationsPage() {
                   </span>
                 ) : null}
 
-                {selectedConversation?.unread_count ? (
+                {selectedConversation?.unreadCount ? (
                   <span className="inline-flex items-center rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
-                    {selectedConversation.unread_count} no leído(s)
+                    {selectedConversation.unreadCount} no leído(s)
                   </span>
                 ) : null}
               </div>
 
               <div className="mt-2 text-sm text-slate-500">
-                Último movimiento: {formatDate(selectedConversation?.ultimo_at || null)}
+                Último movimiento: {formatDate(selectedConversation?.ultimoAt || null)}
               </div>
             </div>
 
