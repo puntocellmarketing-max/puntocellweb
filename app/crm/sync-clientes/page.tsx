@@ -17,8 +17,8 @@ type FormState = {
   cloudUser: string;
   cloudPassword: string;
 
-  categoria: string;
-  zona: string;
+  codCategoria: string;
+  codZona: string;
   ultimoPagoDesde: string;
   ultimoPagoHasta: string;
   diasAtrasoMin: string;
@@ -47,6 +47,16 @@ type SyncJob = {
   }[];
 };
 
+type CategoriaItem = {
+  codCategoria: number;
+  Descripcion: string;
+};
+
+type ZonaItem = {
+  codZona: number;
+  Descripcion: string;
+};
+
 export default function SyncClientesPage() {
   const [form, setForm] = useState<FormState>({
     localHost: "localhost",
@@ -62,8 +72,8 @@ export default function SyncClientesPage() {
     cloudUser: "root",
     cloudPassword: "",
 
-    categoria: "",
-    zona: "",
+    codCategoria: "",
+    codZona: "",
     ultimoPagoDesde: "",
     ultimoPagoHasta: "",
     diasAtrasoMin: "1",
@@ -76,6 +86,10 @@ export default function SyncClientesPage() {
   const [loading, setLoading] = useState(false);
   const [job, setJob] = useState<SyncJob | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+
+  const [categorias, setCategorias] = useState<CategoriaItem[]>([]);
+  const [zonas, setZonas] = useState<ZonaItem[]>([]);
+  const [catalogosLoading, setCatalogosLoading] = useState(false);
 
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -109,6 +123,32 @@ export default function SyncClientesPage() {
     if (!job) return false;
     return job.status === "success" && job.totalValidos > 0;
   }, [job]);
+
+  async function loadCatalogos() {
+    try {
+      setCatalogosLoading(true);
+
+      const res = await fetch("/api/crm/catalogos", {
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "No se pudieron cargar los catálogos.");
+      }
+
+      setCategorias(Array.isArray(data.categorias) ? data.categorias : []);
+      setZonas(Array.isArray(data.zonas) ? data.zonas : []);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg((prev) =>
+        prev || err?.message || "No se pudieron cargar categorías y zonas."
+      );
+    } finally {
+      setCatalogosLoading(false);
+    }
+  }
 
   async function fetchJobStatus(id: string) {
     const res = await fetch(`/api/crm/sync-clientes/status/${id}`, {
@@ -182,8 +222,8 @@ export default function SyncClientesPage() {
             password: form.cloudPassword,
           },
           filters: {
-            categoria: form.categoria.trim() || null,
-            zona: form.zona.trim() || null,
+            codCategoria: form.codCategoria ? Number(form.codCategoria) : null,
+            codZona: form.codZona ? Number(form.codZona) : null,
             ultimoPagoDesde: form.ultimoPagoDesde || null,
             ultimoPagoHasta: form.ultimoPagoHasta || null,
             diasAtrasoMin: form.diasAtrasoMin ? Number(form.diasAtrasoMin) : null,
@@ -222,6 +262,8 @@ export default function SyncClientesPage() {
   }
 
   useEffect(() => {
+    loadCatalogos();
+
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -279,12 +321,37 @@ export default function SyncClientesPage() {
             subtitle="Origen: vista local consolidada."
           >
             <div className="grid gap-4">
-              <Field label="Host" value={form.localHost} onChange={(v) => updateField("localHost", v)} />
-              <Field label="Puerto" value={form.localPort} onChange={(v) => updateField("localPort", v)} />
-              <Field label="Base de datos" value={form.localDatabase} onChange={(v) => updateField("localDatabase", v)} />
-              <Field label="Usuario" value={form.localUser} onChange={(v) => updateField("localUser", v)} />
-              <Field label="Password" type="password" value={form.localPassword} onChange={(v) => updateField("localPassword", v)} />
-              <Field label="Vista" value={form.localView} onChange={(v) => updateField("localView", v)} />
+              <Field
+                label="Host"
+                value={form.localHost}
+                onChange={(v) => updateField("localHost", v)}
+              />
+              <Field
+                label="Puerto"
+                value={form.localPort}
+                onChange={(v) => updateField("localPort", v)}
+              />
+              <Field
+                label="Base de datos"
+                value={form.localDatabase}
+                onChange={(v) => updateField("localDatabase", v)}
+              />
+              <Field
+                label="Usuario"
+                value={form.localUser}
+                onChange={(v) => updateField("localUser", v)}
+              />
+              <Field
+                label="Password"
+                type="password"
+                value={form.localPassword}
+                onChange={(v) => updateField("localPassword", v)}
+              />
+              <Field
+                label="Vista"
+                value={form.localView}
+                onChange={(v) => updateField("localView", v)}
+              />
             </div>
           </CardSection>
 
@@ -293,11 +360,32 @@ export default function SyncClientesPage() {
             subtitle="Destino: tabla crm_clientes_sync."
           >
             <div className="grid gap-4">
-              <Field label="Host" value={form.cloudHost} onChange={(v) => updateField("cloudHost", v)} />
-              <Field label="Puerto" value={form.cloudPort} onChange={(v) => updateField("cloudPort", v)} />
-              <Field label="Base de datos" value={form.cloudDatabase} onChange={(v) => updateField("cloudDatabase", v)} />
-              <Field label="Usuario" value={form.cloudUser} onChange={(v) => updateField("cloudUser", v)} />
-              <Field label="Password" type="password" value={form.cloudPassword} onChange={(v) => updateField("cloudPassword", v)} />
+              <Field
+                label="Host"
+                value={form.cloudHost}
+                onChange={(v) => updateField("cloudHost", v)}
+              />
+              <Field
+                label="Puerto"
+                value={form.cloudPort}
+                onChange={(v) => updateField("cloudPort", v)}
+              />
+              <Field
+                label="Base de datos"
+                value={form.cloudDatabase}
+                onChange={(v) => updateField("cloudDatabase", v)}
+              />
+              <Field
+                label="Usuario"
+                value={form.cloudUser}
+                onChange={(v) => updateField("cloudUser", v)}
+              />
+              <Field
+                label="Password"
+                type="password"
+                value={form.cloudPassword}
+                onChange={(v) => updateField("cloudPassword", v)}
+              />
               <Field
                 label="Límite para prueba"
                 value={form.limit}
@@ -313,18 +401,28 @@ export default function SyncClientesPage() {
           subtitle="Dejalos vacíos si no querés aplicarlos."
         >
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Field
+            <SelectField
               label="Categoría"
-              value={form.categoria}
-              onChange={(v) => updateField("categoria", v)}
-              placeholder="Ej: DEFINIR"
+              value={form.codCategoria}
+              onChange={(v) => updateField("codCategoria", v)}
+              options={categorias}
+              valueKey="codCategoria"
+              labelKey="Descripcion"
+              placeholder={
+                catalogosLoading ? "Cargando categorías..." : "Todas las categorías"
+              }
+              disabled={catalogosLoading}
             />
 
-            <Field
+            <SelectField
               label="Zona"
-              value={form.zona}
-              onChange={(v) => updateField("zona", v)}
-              placeholder="Ej: Concepción"
+              value={form.codZona}
+              onChange={(v) => updateField("codZona", v)}
+              options={zonas}
+              valueKey="codZona"
+              labelKey="Descripcion"
+              placeholder={catalogosLoading ? "Cargando zonas..." : "Todas las zonas"}
+              disabled={catalogosLoading}
             />
 
             <DateField
@@ -354,15 +452,26 @@ export default function SyncClientesPage() {
             />
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={form.soloTelefonosValidos}
-                onChange={(e) => updateField("soloTelefonosValidos", e.target.checked)}
+                onChange={(e) =>
+                  updateField("soloTelefonosValidos", e.target.checked)
+                }
               />
               Solo teléfonos válidos
             </label>
+
+            <button
+              type="button"
+              onClick={loadCatalogos}
+              disabled={catalogosLoading}
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {catalogosLoading ? "Actualizando listas..." : "Actualizar listas"}
+            </button>
           </div>
         </CardSection>
 
@@ -399,7 +508,8 @@ export default function SyncClientesPage() {
           <CardSection title="Resultado del job" subtitle={`ID: ${job.id}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-600">
-                Etapa actual: <span className="font-medium text-slate-900">{job.stage}</span>
+                Etapa actual:{" "}
+                <span className="font-medium text-slate-900">{job.stage}</span>
               </div>
 
               <div
@@ -529,9 +639,7 @@ function CardSection({
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div>
         <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        {subtitle ? (
-          <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
-        ) : null}
+        {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
       </div>
       <div className="mt-4">{children}</div>
     </section>
@@ -561,6 +669,45 @@ function Field({
         className="rounded-xl border border-slate-200 px-3 py-2.5 text-slate-900 outline-none transition focus:border-slate-400"
         placeholder={placeholder}
       />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+  valueKey,
+  labelKey,
+  placeholder = "Seleccionar",
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<Record<string, any>>;
+  valueKey: string;
+  labelKey: string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="text-slate-700">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 outline-none transition focus:border-slate-400 disabled:bg-slate-100"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((item) => (
+          <option key={String(item[valueKey])} value={String(item[valueKey])}>
+            {String(item[labelKey] ?? "")}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

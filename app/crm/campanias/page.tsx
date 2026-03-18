@@ -417,19 +417,32 @@ export default function CampaignsPage() {
                   </div>
                 ) : null}
 
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <Link
-                    href={`/crm/campanias/${row.idCampania}`}
-                    className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
-                  >
-                    Ver detalle
-                  </Link>
+				<div className="mt-5 flex flex-wrap gap-3">
+				  <Link
+					href={`/crm/campanias/${row.idCampania}`}
+					className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
+				  >
+					Ver detalle
+				  </Link>
 
-                  <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-500">
-                    Siguiente paso: cola y envío
-                  </span>
-                </div>
-              </article>
+				  {row.idAudiencia ? (
+					<Link
+					  href={`/crm/agenda/dashboard?idAudiencia=${row.idAudiencia}`}
+					  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+					>
+					  Abrir agenda
+					</Link>
+				  ) : (
+					<span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-400">
+					  Sin audiencia
+					</span>
+				  )}
+
+				  <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-500">
+					Siguiente paso: cola y envío
+				  </span>
+				</div>
+							  </article>
             ))}
           </div>
         )}

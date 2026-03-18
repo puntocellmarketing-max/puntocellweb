@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Cobrador = {
   id_cobrador: number;
@@ -13,15 +14,11 @@ type FormState = {
   codCliente: string;
   telefono: string;
   idCobradorAsignado: string;
-  idCobradorCreador: string;
   tipoGestion: string;
-  estado: string;
   prioridad: string;
   fechaRecordatorio: string;
-  horaRecordatorio: string;
   nota: string;
   resultado: string;
-  creadoPor: string;
 };
 
 const TIPOS_GESTION = [
@@ -31,16 +28,6 @@ const TIPOS_GESTION = [
   "VISITA",
   "PROMESA_PAGO",
   "SEGUIMIENTO",
-] as const;
-
-const ESTADOS = [
-  "PENDIENTE",
-  "REALIZADO",
-  "REAGENDADO",
-  "CANCELADO",
-  "PAGADO",
-  "NO_RESPONDE",
-  "ERRONEO",
 ] as const;
 
 const PRIORIDADES = ["BAJA", "MEDIA", "ALTA"] as const;
@@ -53,22 +40,12 @@ function todayDate() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function currentTimeRounded() {
-  const d = new Date();
-  d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5);
-
-  if (d.getMinutes() === 60) {
-    d.setHours(d.getHours() + 1);
-    d.setMinutes(0);
-  }
-
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
 function normalizePhone(v: string) {
   return String(v || "").replace(/[^\d]/g, "");
+}
+
+function buildReminderDatetime(dateValue: string) {
+  return dateValue ? `${dateValue} 09:00:00` : "";
 }
 
 type Props = {
@@ -80,19 +57,17 @@ export default function AgendarClientPage({
   telefonoParam,
   codClienteParam,
 }: Props) {
+  const router = useRouter();
+
   const [form, setForm] = useState<FormState>({
     codCliente: codClienteParam,
     telefono: telefonoParam,
     idCobradorAsignado: "",
-    idCobradorCreador: "",
     tipoGestion: "SEGUIMIENTO",
-    estado: "PENDIENTE",
     prioridad: "MEDIA",
     fechaRecordatorio: todayDate(),
-    horaRecordatorio: currentTimeRounded(),
     nota: "",
     resultado: "",
-    creadoPor: "",
   });
 
   const [cobradores, setCobradores] = useState<Cobrador[]>([]);
@@ -119,10 +94,7 @@ export default function AgendarClientPage({
         setLoadingCobradores(true);
         setErrorMsg("");
 
-        const res = await fetch("/api/crm/cobradores", {
-          cache: "no-store",
-        });
-
+        const res = await fetch("/api/crm/cobradores", { cache: "no-store" });
         const data = await res.json();
 
         if (!res.ok || !data?.ok) {
@@ -137,8 +109,6 @@ export default function AgendarClientPage({
             ...prev,
             idCobradorAsignado:
               prev.idCobradorAsignado || String(rows[0].id_cobrador),
-            idCobradorCreador:
-              prev.idCobradorCreador || String(rows[0].id_cobrador),
           }));
         }
       } catch (e: any) {
@@ -151,20 +121,26 @@ export default function AgendarClientPage({
     loadCobradores();
   }, []);
 
-  const fechaRecordatorioFull = useMemo(() => {
-    if (!form.fechaRecordatorio) return "";
-    return `${form.fechaRecordatorio} ${form.horaRecordatorio || "00:00"}:00`;
-  }, [form.fechaRecordatorio, form.horaRecordatorio]);
+  const fechaRecordatorioFull = useMemo(
+    () => buildReminderDatetime(form.fechaRecordatorio),
+    [form.fechaRecordatorio]
+  );
+
+  const cobradorAsignadoNombre = useMemo(() => {
+    return (
+      cobradores.find(
+        (c) => String(c.id_cobrador) === form.idCobradorAsignado
+      )?.nombre || "—"
+    );
+  }, [cobradores, form.idCobradorAsignado]);
 
   const canSubmit = useMemo(() => {
     return (
       !!form.fechaRecordatorio &&
-      !!form.horaRecordatorio &&
       !!form.idCobradorAsignado &&
-      !!form.idCobradorCreador &&
       !!form.tipoGestion &&
-      !!form.estado &&
-      !!form.prioridad
+      !!form.prioridad &&
+      (!!form.codCliente.trim() || !!normalizePhone(form.telefono))
     );
   }, [form]);
 
@@ -185,26 +161,25 @@ export default function AgendarClientPage({
         codCliente: form.codCliente ? Number(form.codCliente) : null,
         telefono: normalizePhone(form.telefono) || null,
         idCobradorAsignado: Number(form.idCobradorAsignado),
-        idCobradorCreador: Number(form.idCobradorCreador),
         tipoGestion: form.tipoGestion,
-        estado: form.estado,
         prioridad: form.prioridad,
         fechaRecordatorio: fechaRecordatorioFull,
         nota: form.nota.trim() || null,
         resultado: form.resultado.trim() || null,
-        creadoPor: form.creadoPor.trim() || null,
       };
 
       const res = await fetch("/api/crm/agendar", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const raw = await res.text();
-      const data = raw ? JSON.parse(raw) : {};
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("La respuesta del servidor no fue válida.");
+      }
 
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || "No se pudo guardar la agenda.");
@@ -214,11 +189,10 @@ export default function AgendarClientPage({
 
       setForm((prev) => ({
         ...prev,
+        tipoGestion: "SEGUIMIENTO",
+        prioridad: "MEDIA",
         nota: "",
         resultado: "",
-        estado: "PENDIENTE",
-        prioridad: "MEDIA",
-        tipoGestion: "SEGUIMIENTO",
       }));
     } catch (e: any) {
       setErrorMsg(e?.message || "Error guardando agenda.");
@@ -237,12 +211,12 @@ export default function AgendarClientPage({
             </div>
 
             <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
-              Registrar gestión
+              Registrar seguimiento
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Cargá recordatorios, promesas de pago y seguimientos asociados al
-              cliente, al teléfono y al cobrador responsable.
+              Registrá recordatorios, promesas de pago y seguimientos del cliente
+              de forma rápida y ordenada.
             </p>
           </div>
 
@@ -255,23 +229,23 @@ export default function AgendarClientPage({
             </Link>
 
             <Link
-              href="/crm"
+              href="/crm/agenda/dashboard"
               className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
             >
-              Dashboard
+              Dashboard agenda
             </Link>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
+      <section className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
         <form
           onSubmit={handleSubmit}
           className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
         >
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-xl font-semibold text-slate-950">
-              Datos de la gestión
+              Cargar gestión
             </h3>
 
             <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
@@ -279,113 +253,103 @@ export default function AgendarClientPage({
             </span>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <Field
-              label="cod_cliente"
-              value={form.codCliente}
-              onChange={(v) => updateField("codCliente", v)}
-              placeholder="Ej: 1234"
-            />
+          <div className="mt-6 space-y-6">
+            <section className="rounded-2xl border border-slate-200 p-4">
+              <div className="mb-4 text-sm font-semibold text-slate-900">
+                Cliente y responsable
+              </div>
 
-            <Field
-              label="Teléfono"
-              value={form.telefono}
-              onChange={(v) => updateField("telefono", v)}
-              placeholder="59598..."
-            />
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field
+                  label="Cod. cliente"
+                  value={form.codCliente}
+                  onChange={(v) => updateField("codCliente", v)}
+                  placeholder="Ej: 1234"
+                />
 
-            <SelectField
-              label="Cobrador asignado"
-              value={form.idCobradorAsignado}
-              onChange={(v) => updateField("idCobradorAsignado", v)}
-              disabled={loadingCobradores}
-              options={cobradores.map((c) => ({
-                value: String(c.id_cobrador),
-                label: c.nombre,
-              }))}
-            />
+                <Field
+                  label="Teléfono"
+                  value={form.telefono}
+                  onChange={(v) => updateField("telefono", v)}
+                  placeholder="59598..."
+                />
 
-            <SelectField
-              label="Cobrador creador"
-              value={form.idCobradorCreador}
-              onChange={(v) => updateField("idCobradorCreador", v)}
-              disabled={loadingCobradores}
-              options={cobradores.map((c) => ({
-                value: String(c.id_cobrador),
-                label: c.nombre,
-              }))}
-            />
+                <SelectField
+                  label="Cobrador asignado"
+                  value={form.idCobradorAsignado}
+                  onChange={(v) => updateField("idCobradorAsignado", v)}
+                  disabled={loadingCobradores}
+                  options={cobradores.map((c) => ({
+                    value: String(c.id_cobrador),
+                    label: c.nombre,
+                  }))}
+                />
+              </div>
+            </section>
 
-            <SelectField
-              label="Tipo de gestión"
-              value={form.tipoGestion}
-              onChange={(v) => updateField("tipoGestion", v)}
-              options={TIPOS_GESTION.map((v) => ({
-                value: v,
-                label: v,
-              }))}
-            />
+            <section className="rounded-2xl border border-slate-200 p-4">
+              <div className="mb-4 text-sm font-semibold text-slate-900">
+                Seguimiento
+              </div>
 
-            <SelectField
-              label="Estado"
-              value={form.estado}
-              onChange={(v) => updateField("estado", v)}
-              options={ESTADOS.map((v) => ({
-                value: v,
-                label: v,
-              }))}
-            />
+              <div className="grid gap-4 md:grid-cols-3">
+                <SelectField
+                  label="Tipo de gestión"
+                  value={form.tipoGestion}
+                  onChange={(v) => updateField("tipoGestion", v)}
+                  options={TIPOS_GESTION.map((v) => ({
+                    value: v,
+                    label: v,
+                  }))}
+                />
 
-            <SelectField
-              label="Prioridad"
-              value={form.prioridad}
-              onChange={(v) => updateField("prioridad", v)}
-              options={PRIORIDADES.map((v) => ({
-                value: v,
-                label: v,
-              }))}
-            />
+                <SelectField
+                  label="Prioridad"
+                  value={form.prioridad}
+                  onChange={(v) => updateField("prioridad", v)}
+                  options={PRIORIDADES.map((v) => ({
+                    value: v,
+                    label: v,
+                  }))}
+                />
 
-            <Field
-              label="Creado por"
-              value={form.creadoPor}
-              onChange={(v) => updateField("creadoPor", v)}
-              placeholder="Ej: Cesar / Admin / Supervisor"
-            />
+                <DateField
+                  label="Fecha de seguimiento"
+                  value={form.fechaRecordatorio}
+                  onChange={(v) => updateField("fechaRecordatorio", v)}
+                />
+              </div>
 
-            <DateField
-              label="Fecha recordatorio"
-              value={form.fechaRecordatorio}
-              onChange={(v) => updateField("fechaRecordatorio", v)}
-            />
+              <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                Se guardará automáticamente como{" "}
+                <span className="font-semibold">PENDIENTE</span> con horario base{" "}
+                <span className="font-semibold">09:00</span>.
+              </div>
+            </section>
 
-            <TimeField
-              label="Hora recordatorio"
-              value={form.horaRecordatorio}
-              onChange={(v) => updateField("horaRecordatorio", v)}
-            />
-          </div>
+            <section className="rounded-2xl border border-slate-200 p-4">
+              <div className="mb-4 text-sm font-semibold text-slate-900">
+                Observación
+              </div>
 
-          <div className="mt-5 grid gap-1.5 text-sm">
-            <span className="text-slate-700">Nota</span>
-            <textarea
-              value={form.nota}
-              onChange={(e) => updateField("nota", e.target.value)}
-              rows={5}
-              className="rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-500"
-              placeholder="Ej: Cliente responde que pagará a fin de mes..."
-            />
-          </div>
+              <div className="grid gap-4">
+                <TextAreaField
+                  label="Nota principal"
+                  value={form.nota}
+                  onChange={(v) => updateField("nota", v)}
+                  rows={5}
+                  placeholder="Ej: Cliente responde que pagará a fin de mes..."
+                />
 
-          <div className="mt-5 grid gap-1.5 text-sm">
-            <span className="text-slate-700">Resultado / observación adicional</span>
-            <textarea
-              value={form.resultado}
-              onChange={(e) => updateField("resultado", e.target.value)}
-              rows={4}
-              className="rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-500"
-              placeholder="Ej: Solicita recontacto el 30/03..."
-            />
+                <TextAreaField
+                  label="Resultado / observación adicional"
+                  value={form.resultado}
+                  onChange={(v) => updateField("resultado", v)}
+                  rows={4}
+                  placeholder="Ej: Solicita recontacto, promete fecha, número compartido, etc."
+                />
+              </div>
+            </section>
           </div>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -397,8 +361,16 @@ export default function AgendarClientPage({
               {saving ? "Guardando..." : "Guardar agenda"}
             </button>
 
+            <button
+              type="button"
+              onClick={() => router.push("/crm/agenda/dashboard")}
+              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+            >
+              Ver dashboard
+            </button>
+
             <div className="text-sm text-slate-500">
-              Fecha/hora objetivo:{" "}
+              Fecha objetivo:{" "}
               <span className="font-mono text-slate-700">
                 {fechaRecordatorioFull || "—"}
               </span>
@@ -421,35 +393,17 @@ export default function AgendarClientPage({
         <div className="space-y-6">
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-xl font-semibold text-slate-950">
-              Resumen rápido
+              Contexto rápido
             </h3>
 
             <div className="mt-5 grid gap-4">
               <SummaryItem label="Teléfono" value={form.telefono || "—"} />
-              <SummaryItem label="cod_cliente" value={form.codCliente || "—"} />
-              <SummaryItem
-                label="Cobrador asignado"
-                value={
-                  cobradores.find(
-                    (c) => String(c.id_cobrador) === form.idCobradorAsignado
-                  )?.nombre || "—"
-                }
-              />
-              <SummaryItem
-                label="Cobrador creador"
-                value={
-                  cobradores.find(
-                    (c) => String(c.id_cobrador) === form.idCobradorCreador
-                  )?.nombre || "—"
-                }
-              />
+              <SummaryItem label="Cod. cliente" value={form.codCliente || "—"} />
+              <SummaryItem label="Cobrador asignado" value={cobradorAsignadoNombre} />
               <SummaryItem label="Tipo gestión" value={form.tipoGestion} />
-              <SummaryItem label="Estado" value={form.estado} />
               <SummaryItem label="Prioridad" value={form.prioridad} />
-              <SummaryItem
-                label="Recordatorio"
-                value={fechaRecordatorioFull || "—"}
-              />
+              <SummaryItem label="Estado al crear" value="PENDIENTE" />
+              <SummaryItem label="Fecha objetivo" value={fechaRecordatorioFull || "—"} />
             </div>
           </section>
 
@@ -461,30 +415,24 @@ export default function AgendarClientPage({
             <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
               <p>
                 Usá <span className="font-medium">PROMESA_PAGO</span> cuando el
-                cliente confirma una fecha concreta.
+                cliente confirme una fecha concreta.
               </p>
               <p>
                 Marcá <span className="font-medium">ALTA</span> prioridad si el
                 caso requiere seguimiento cercano.
               </p>
               <p>
-                El cobrador asignado te va a servir luego para reportes y
-                comisión.
+                Para seguimiento general, <span className="font-medium">SEGUIMIENTO</span>{" "}
+                suele ser el tipo más práctico.
               </p>
             </div>
           </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Continuar flujo
-                </h3>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  Después de registrar esta gestión, podés volver al inbox o seguir
-                  revisando campañas y resultados.
-                </p>
-              </div>
+            <div className="flex flex-col gap-4">
+              <h3 className="text-sm font-semibold text-slate-900">
+                Continuar flujo
+              </h3>
 
               <div className="flex flex-wrap gap-3">
                 <Link
@@ -496,9 +444,16 @@ export default function AgendarClientPage({
 
                 <Link
                   href="/crm/campanias"
-                  className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                 >
                   Ver campañas
+                </Link>
+
+                <Link
+                  href="/crm/agenda/dashboard"
+                  className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+                >
+                  Abrir agenda
                 </Link>
               </div>
             </div>
@@ -556,28 +511,6 @@ function DateField({
   );
 }
 
-function TimeField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="grid gap-1.5 text-sm">
-      <span className="text-slate-700">{label}</span>
-      <input
-        type="time"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-slate-500"
-      />
-    </label>
-  );
-}
-
 function SelectField({
   label,
   value,
@@ -607,6 +540,33 @@ function SelectField({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  value,
+  onChange,
+  rows,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  rows: number;
+  placeholder?: string;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="text-slate-700">{label}</span>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={rows}
+        placeholder={placeholder}
+        className="rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-500"
+      />
     </label>
   );
 }

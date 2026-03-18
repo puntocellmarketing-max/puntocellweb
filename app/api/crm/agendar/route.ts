@@ -41,11 +41,7 @@ const ESTADOS_VALIDOS = new Set([
   "ERRONEO",
 ]);
 
-const PRIORIDADES_VALIDAS = new Set([
-  "BAJA",
-  "MEDIA",
-  "ALTA",
-]);
+const PRIORIDADES_VALIDAS = new Set(["BAJA", "MEDIA", "ALTA"]);
 
 function normalizePhone(v: unknown): string | null {
   const cleaned = String(v ?? "").replace(/[^\d]/g, "").trim();
@@ -71,11 +67,13 @@ export async function POST(req: Request) {
 
     const codCliente = safeIntOrNull(body?.codCliente);
     const telefono = normalizePhone(body?.telefono);
+
     const idCobradorAsignado = safeIntOrNull(body?.idCobradorAsignado);
-    const idCobradorCreador = safeIntOrNull(body?.idCobradorCreador);
+    const idCobradorCreador =
+      safeIntOrNull(body?.idCobradorCreador) ?? idCobradorAsignado;
 
     const tipoGestion = String(body?.tipoGestion || "").trim().toUpperCase();
-    const estado = String(body?.estado || "").trim().toUpperCase();
+    const estado = String(body?.estado || "PENDIENTE").trim().toUpperCase();
     const prioridad = String(body?.prioridad || "").trim().toUpperCase();
 
     const fechaRecordatorio = String(body?.fechaRecordatorio || "").trim();
@@ -85,7 +83,7 @@ export async function POST(req: Request) {
 
     if (!idCobradorAsignado || !idCobradorCreador) {
       return NextResponse.json(
-        { ok: false, error: "Falta seleccionar cobrador asignado y creador." },
+        { ok: false, error: "Falta seleccionar cobrador asignado." },
         { status: 400 }
       );
     }
