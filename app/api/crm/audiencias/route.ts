@@ -1,30 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import mysql from "mysql2/promise";
+import { crmPool } from "@/lib/db-crm";
+import type { ResultSetHeader, RowDataPacket, PoolConnection } from "mysql2/promise";
 
-type DbRow = Record<string, any>;
+type DbRow = RowDataPacket & Record<string, any>;
 
 function json(data: any, status = 200) {
   return NextResponse.json(data, { status });
 }
 
-function getPool() {
-  return mysql.createPool({
-    host: process.env.CRM_DB_HOST,
-    port: Number(process.env.CRM_DB_PORT || 3306),
-    user: process.env.CRM_DB_USER,
-    password: process.env.CRM_DB_PASS,
-    database: process.env.CRM_DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-  });
-}
-
 export async function GET() {
-  const pool = getPool();
-
   try {
-    const [rows] = (await pool.query(
+    const [rows] = await crmPool.query<DbRow[]>(
       `
       SELECT
         id_audiencia AS idAudiencia,
@@ -41,13 +27,14 @@ export async function GET() {
       FROM crm_audiencias
       ORDER BY id_audiencia DESC
       `
-    )) as [DbRow[], any];
+    );
 
     return json({
       ok: true,
       rows,
     });
   } catch (error: any) {
+    console.error("Error GET /api/crm/audiencias:", error);
     return json(
       {
         ok: false,
@@ -55,14 +42,11 @@ export async function GET() {
       },
       500
     );
-  } finally {
-    await pool.end();
   }
 }
 
 export async function POST(req: NextRequest) {
-  const pool = getPool();
-  const conn = await pool.getConnection();
+  let conn: PoolConnection | null = null;
 
   try {
     const body = await req.json();
@@ -92,7 +76,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const [syncRows] = (await conn.query(
+    conn = await crmPool.getConnection();
+
+    const [syncRows] = await conn.query<DbRow[]>(
       `
       SELECT
         cod_cliente,
@@ -111,7 +97,7 @@ export async function POST(req: NextRequest) {
       ORDER BY cliente ASC
       `,
       [jobId]
-    )) as [DbRow[], any];
+    );
 
     if (!syncRows.length) {
       return json(
@@ -139,7 +125,7 @@ export async function POST(req: NextRequest) {
 
     await conn.beginTransaction();
 
-    const [insertAudiencia] = await conn.query<mysql.ResultSetHeader>(
+    const [insertAudiencia] = await conn.query<ResultSetHeader>(
       `
       INSERT INTO crm_audiencias
       (
@@ -219,8 +205,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     try {
-      await conn.rollback();
+      await conn?.rollback();
     } catch {}
+
+    console.error("Error POST /api/crm/audiencias:", error);
 
     return json(
       {
@@ -230,7 +218,8 @@ export async function POST(req: NextRequest) {
       500
     );
   } finally {
-    conn.release();
-    await pool.end();
+    try {
+      conn?.release();
+    } catch {}
   }
 }
