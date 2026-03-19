@@ -20,6 +20,42 @@ type ExistingQueueRow = RowDataPacket & {
   totalExistentes: number;
 };
 
+type AudienceDetailRow = RowDataPacket & {
+  id_detalle: number;
+  id_audiencia: number;
+  cod_cliente: number;
+  cliente: string;
+  telefono: string;
+  saldo: string | number | null;
+};
+
+function formatSaldo(value: string | number | null | undefined): string {
+  const num = Number(value ?? 0);
+  if (!Number.isFinite(num)) return String(value ?? "");
+  return new Intl.NumberFormat("es-PY", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(num);
+}
+
+function renderCobranzaSuave(cliente: string, saldo: string | number | null | undefined): string {
+  const nombre = String(cliente || "").trim();
+  const saldoFmt = formatSaldo(saldo);
+
+  return [
+    `Buenas ${nombre},`,
+    `le escribimos desde PUNTOCELL.`,
+    `Le recordamos que cuenta con cuotas`,
+    `vencidas pendientes por pagar.`,
+    `Puede solicitar su extracto, solicitar un`,
+    `cobrador, o agendar una fecha de pago.`,
+    `Si ya abonó, favor omitir el mensaje,`,
+    `muchas gracias.`,
+    `Saldo Capital pendiente a la Fecha:`,
+    `${saldoFmt} Gs.`,
+  ].join("\n");
+}
+
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -143,8 +179,58 @@ export async function POST(
       );
     }
 
-    const [insertResult] = await conn.execute<ResultSetHeader>(
+    const [detalleRows] = await conn.query<AudienceDetailRow[]>(
       `
+      SELECT
+        d.id_detalle,
+        d.id_audiencia,
+        d.cod_cliente,
+        d.cliente,
+        d.telefono,
+        d.saldo
+      FROM crm_audiencia_detalle d
+      WHERE d.id_audiencia = ?
+        AND d.telefono_valido = 1
+        AND d.telefono IS NOT NULL
+        AND d.telefono <> ''
+      `,
+      [camp.id_audiencia]
+    );
+
+    if (!detalleRows.length) {
+      await conn.rollback();
+      return NextResponse.json(
+        { ok: false, error: "No se encontraron destinatarios válidos." },
+        { status: 400 }
+      );
+    }
+
+    const placeholders: string[] = [];
+    const values: any[] = [];
+
+    for (const d of detalleRows) {
+      let mensajeRenderizado: string;
+
+      if (String(camp.plantilla).trim() === "cobranza_suave_v1") {
+        mensajeRenderizado = renderCobranzaSuave(d.cliente, d.saldo);
+      } else {
+        mensajeRenderizado = `[Plantilla] ${String(camp.plantilla).trim()}`;
+      }
+
+      placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', 0, NOW())");
+      values.push(
+        idCampania,
+        d.id_audiencia,
+        d.id_detalle,
+        d.cod_cliente,
+        d.telefono,
+        mensajeRenderizado,
+        String(camp.plantilla),
+        String(camp.idioma || "es")
+      );
+    }
+
+    const insertSql = `
       INSERT INTO envios_whatsapp (
         id_campania,
         id_audiencia,
@@ -158,31 +244,10 @@ export async function POST(
         intentos,
         fecha_creacion
       )
-      SELECT
-        ?,
-        d.id_audiencia,
-        d.id_detalle,
-        d.cod_cliente,
-        d.telefono,
-        NULL,
-        ?,
-        ?,
-        'QUEUED',
-        0,
-        NOW()
-      FROM crm_audiencia_detalle d
-      WHERE d.id_audiencia = ?
-        AND d.telefono_valido = 1
-        AND d.telefono IS NOT NULL
-        AND d.telefono <> ''
-      `,
-      [
-        idCampania,
-        String(camp.plantilla),
-        String(camp.idioma || "es"),
-        Number(camp.id_audiencia),
-      ]
-    );
+      VALUES ${placeholders.join(", ")}
+    `;
+
+    const [insertResult] = await conn.execute<ResultSetHeader>(insertSql, values);
 
     await conn.execute(
       `

@@ -23,10 +23,15 @@ export async function GET(req: Request) {
     const telefono = String(searchParams.get("telefono") || "").trim();
     const limitRaw = searchParams.get("limit") || "200";
     const parsed = parseInt(limitRaw, 10);
-    const limit = Number.isFinite(parsed) ? Math.max(1, Math.min(500, parsed)) : 200;
+    const limit = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(500, parsed))
+      : 200;
 
     if (!telefono) {
-      return NextResponse.json({ ok: false, error: "Falta telefono" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Falta telefono" },
+        { status: 400 }
+      );
     }
 
     const sql = `
@@ -50,7 +55,11 @@ export async function GET(req: Request) {
           CONCAT('OUT-', ew.id_envio) AS id,
           'OUT' AS dir,
           ew.telefono AS telefono,
-          COALESCE(ew.mensaje, CONCAT('[Plantilla] ', ew.plantilla)) AS texto,
+          CASE
+            WHEN ew.mensaje IS NOT NULL AND TRIM(ew.mensaje) <> '' THEN ew.mensaje
+            WHEN ew.plantilla IS NOT NULL AND TRIM(ew.plantilla) <> '' THEN CONCAT('[Plantilla] ', ew.plantilla)
+            ELSE '(sin contenido)'
+          END AS texto,
           'texto' AS tipo,
           NULL AS id_opcion,
           NULL AS titulo_opcion,
