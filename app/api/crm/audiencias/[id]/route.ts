@@ -28,6 +28,20 @@ type AudienceSummaryRow = RowDataPacket & {
   clientesRequierenRevision: number;
 };
 
+type AudienceDetailRow = RowDataPacket & {
+  id_detalle: number;
+  id_audiencia: number;
+  cod_cliente: number;
+  cliente: string;
+  telefono: string | null;
+  telefono_valido: number;
+  motivo_telefono_invalido: string | null;
+  requiere_revision: number;
+  dias_atraso: number | null;
+  saldo: number | null;
+  ultimo_pago: string | null;
+};
+
 export async function GET(
   _req: Request,
   context: { params: Promise<{ id: string }> }
@@ -87,6 +101,27 @@ export async function GET(
       [idAudiencia]
     );
 
+    const [detailRows] = await crmPool.query<AudienceDetailRow[]>(
+      `
+      SELECT
+        id_detalle,
+        id_audiencia,
+        cod_cliente,
+        cliente,
+        telefono,
+        telefono_valido,
+        motivo_telefono_invalido,
+        requiere_revision,
+        dias_atraso,
+        saldo,
+        ultimo_pago
+      FROM crm_audiencia_detalle
+      WHERE id_audiencia = ?
+      ORDER BY cliente ASC
+      `,
+      [idAudiencia]
+    );
+
     const audiencia = audRows[0];
     const resumen = summaryRows[0] || {
       totalDetalle: 0,
@@ -121,6 +156,19 @@ export async function GET(
         clientesTelefonoValido: Number(resumen.clientesTelefonoValido ?? 0),
         clientesRequierenRevision: Number(resumen.clientesRequierenRevision ?? 0),
       },
+      detalle: detailRows.map((row) => ({
+        idDetalle: Number(row.id_detalle),
+        idAudiencia: Number(row.id_audiencia),
+        codCliente: Number(row.cod_cliente),
+        cliente: row.cliente,
+        telefono: row.telefono,
+        telefonoValido: Number(row.telefono_valido ?? 0),
+        motivoTelefonoInvalido: row.motivo_telefono_invalido,
+        requiereRevision: Number(row.requiere_revision ?? 0),
+        diasAtraso: row.dias_atraso == null ? null : Number(row.dias_atraso),
+        saldo: row.saldo == null ? 0 : Number(row.saldo),
+        ultimoPago: row.ultimo_pago,
+      })),
     });
   } catch (e: any) {
     return NextResponse.json(

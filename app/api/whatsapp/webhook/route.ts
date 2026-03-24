@@ -210,104 +210,130 @@ async function findCodClienteByPhone(
   return null;
 }
 
-async function handleIncomingMessage(
-  conn: PoolConnection,
-  msg: any,
-  rawPayload: unknown
-) {
-  const telefono = normalizePhone(msg?.from);
-  const idMensajeWhatsapp = String(msg?.id || "").trim();
-  const tipo = String(msg?.type || "desconocido").trim();
+async function handleIncomingMessage(conn: PoolConnection, value: any, msg: any) {
+  const from = normalizePhone(msg?.from);
+  if (!from) return;
 
-  if (!telefono || !idMensajeWhatsapp) return;
+  const wamid = msg?.id ? String(msg.id) : null;
+  const tipo = String(msg?.type || "unknown").toLowerCase();
 
   let contenido: string | null = null;
   let idOpcion: string | null = null;
   let tituloOpcion: string | null = null;
 
+  let mediaId: string | null = null;
+  let mimeType: string | null = null;
+  let mediaSha256: string | null = null;
+
   if (tipo === "text") {
     contenido = msg?.text?.body ? String(msg.text.body) : null;
   } else if (tipo === "button") {
-    contenido = msg?.button?.text ? String(msg.button.text) : null;
+    contenido = msg?.button?.text ? String(msg.button.text) : "[Botón]";
     idOpcion = msg?.button?.payload ? String(msg.button.payload) : null;
     tituloOpcion = msg?.button?.text ? String(msg.button.text) : null;
   } else if (tipo === "interactive") {
-    const interactiveType = String(msg?.interactive?.type || "").trim();
+    const interactiveType = String(msg?.interactive?.type || "").toLowerCase();
 
     if (interactiveType === "button_reply") {
       contenido = msg?.interactive?.button_reply?.title
         ? String(msg.interactive.button_reply.title)
-        : null;
+        : "[Respuesta botón]";
       idOpcion = msg?.interactive?.button_reply?.id
         ? String(msg.interactive.button_reply.id)
         : null;
-      tituloOpcion = contenido;
+      tituloOpcion = msg?.interactive?.button_reply?.title
+        ? String(msg.interactive.button_reply.title)
+        : null;
     } else if (interactiveType === "list_reply") {
       contenido = msg?.interactive?.list_reply?.title
         ? String(msg.interactive.list_reply.title)
-        : null;
+        : "[Respuesta lista]";
       idOpcion = msg?.interactive?.list_reply?.id
         ? String(msg.interactive.list_reply.id)
         : null;
-      tituloOpcion = contenido;
+      tituloOpcion = msg?.interactive?.list_reply?.title
+        ? String(msg.interactive.list_reply.title)
+        : null;
     } else {
-      contenido = JSON.stringify(msg?.interactive ?? {});
+      contenido = "[Interacción recibida]";
     }
-  } else if (tipo === "image") {
-    contenido = "[Imagen recibida]";
   } else if (tipo === "audio") {
     contenido = "[Audio recibido]";
+    mediaId = msg?.audio?.id ? String(msg.audio.id) : null;
+    mimeType = msg?.audio?.mime_type ? String(msg.audio.mime_type) : null;
+    mediaSha256 = msg?.audio?.sha256 ? String(msg.audio.sha256) : null;
+  } else if (tipo === "image") {
+    contenido = msg?.image?.caption
+      ? String(msg.image.caption)
+      : "[Imagen recibida]";
+    mediaId = msg?.image?.id ? String(msg.image.id) : null;
+    mimeType = msg?.image?.mime_type ? String(msg.image.mime_type) : null;
+    mediaSha256 = msg?.image?.sha256 ? String(msg.image.sha256) : null;
+  } else if (tipo === "video") {
+    contenido = msg?.video?.caption
+      ? String(msg.video.caption)
+      : "[Video recibido]";
+    mediaId = msg?.video?.id ? String(msg.video.id) : null;
+    mimeType = msg?.video?.mime_type ? String(msg.video.mime_type) : null;
+    mediaSha256 = msg?.video?.sha256 ? String(msg.video.sha256) : null;
   } else if (tipo === "document") {
-    contenido = "[Documento recibido]";
+    contenido = msg?.document?.filename
+      ? `[Documento recibido] ${String(msg.document.filename)}`
+      : "[Documento recibido]";
+    mediaId = msg?.document?.id ? String(msg.document.id) : null;
+    mimeType = msg?.document?.mime_type ? String(msg.document.mime_type) : null;
+    mediaSha256 = msg?.document?.sha256 ? String(msg.document.sha256) : null;
   } else {
-    contenido = `[${tipo}]`;
+    contenido = `[Mensaje ${tipo} recibido]`;
   }
 
-  const codCliente = await findCodClienteByPhone(conn, telefono);
-
-  await insertEvento(
-    conn,
-    "incoming_message",
-    rawPayload,
-    idMensajeWhatsapp,
-    telefono
-  );
-
-  await conn.execute<ResultSetHeader>(
+  await conn.execute(
     `
     INSERT INTO mensajes_entrantes (
-      telefono,
-      cod_cliente,
       id_mensaje_whatsapp,
-      tipo,
+      telefono,
       contenido,
+      tipo,
       id_opcion,
       titulo_opcion,
+      media_id,
+      mime_type,
+      media_sha256,
       fecha_recibido
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-    ON DUPLICATE KEY UPDATE
-      contenido = VALUES(contenido),
-      id_opcion = VALUES(id_opcion),
-      titulo_opcion = VALUES(titulo_opcion)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `,
     [
-      telefono,
-      codCliente,
-      idMensajeWhatsapp,
-      tipo,
+      wamid,
+      from,
       contenido,
+      tipo,
       idOpcion,
       tituloOpcion,
+      mediaId,
+      mimeType,
+      mediaSha256,
     ]
+  );
+
+  await conn.execute(
+    `
+    INSERT INTO eventos_whatsapp (
+      telefono,
+      id_mensaje_whatsapp,
+      tipo_evento,
+      payload_json,
+      fecha_evento
+    ) VALUES (?, ?, 'incoming_message', ?, NOW())
+    `,
+    [from, wamid, JSON.stringify(msg)]
   );
 
   await upsertConversation({
     conn,
-    telefono,
-    codCliente,
+    telefono: from,
     ultimoMensaje: contenido,
     ultimoTipo: "IN",
-    incrementarUnread: true,
+    incrementUnread: true,
   });
 }
 
