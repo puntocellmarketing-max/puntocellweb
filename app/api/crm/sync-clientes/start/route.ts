@@ -36,7 +36,7 @@ type SyncPayload = {
 };
 
 type JobUpdate = {
-  status?: "pending" | "running" | "success" | "error";
+  status?: "idle" | "running" | "success" | "error";
   stage?: string | null;
   progress?: number | null;
   totalLeidos?: number | null;
@@ -44,7 +44,7 @@ type JobUpdate = {
   totalValidos?: number | null;
   totalInvalidos?: number | null;
   finished?: boolean;
-  errorMessage?: string | null;
+  errorText?: string | null;
 };
 
 type RunSyncConfig = {
@@ -108,7 +108,12 @@ async function openCloudConnection(cfg: RunSyncConfig) {
   });
 }
 
-async function appendLog(jobId: string, level: string, message: string, cfg: RunSyncConfig) {
+async function appendLog(
+  jobId: string,
+  level: string,
+  message: string,
+  cfg: RunSyncConfig
+) {
   const conn = await openCloudConnection(cfg);
   try {
     await conn.execute(
@@ -116,9 +121,8 @@ async function appendLog(jobId: string, level: string, message: string, cfg: Run
       INSERT INTO crm_sync_job_logs (
         job_id,
         level,
-        message,
-        created_at
-      ) VALUES (?, ?, ?, NOW())
+        message
+      ) VALUES (?, ?, ?)
       `,
       [jobId, level, message]
     );
@@ -161,15 +165,15 @@ async function updateJob(jobId: string, data: JobUpdate, cfg: RunSyncConfig) {
       fields.push("total_invalidos = ?");
       params.push(data.totalInvalidos);
     }
-    if (data.errorMessage !== undefined) {
-      fields.push("error_message = ?");
-      params.push(data.errorMessage);
+    if (data.errorText !== undefined) {
+      fields.push("error_text = ?");
+      params.push(data.errorText);
     }
     if (data.finished === true) {
       fields.push("finished_at = NOW()");
     }
 
-    fields.push("updated_at = NOW()");
+    if (!fields.length) return;
 
     await conn.execute(
       `
@@ -282,9 +286,10 @@ export async function POST(req: Request) {
           total_procesados,
           total_validos,
           total_invalidos,
-          created_at,
-          updated_at
-        ) VALUES (?, 'pending', 'queued', 0, ?, 0, 0, 0, 0, NOW(), NOW())
+          error_text,
+          started_at,
+          finished_at
+        ) VALUES (?, 'idle', 'queued', 0, ?, 0, 0, 0, 0, NULL, NOW(), NULL)
         `,
         [jobId, JSON.stringify(filtersObject)]
       );
@@ -294,9 +299,8 @@ export async function POST(req: Request) {
         INSERT INTO crm_sync_job_logs (
           job_id,
           level,
-          message,
-          created_at
-        ) VALUES (?, 'info', ?, NOW())
+          message
+        ) VALUES (?, 'info', ?)
         `,
         [
           jobId,
@@ -626,7 +630,7 @@ async function runSyncJob(jobId: string, cfg: RunSyncConfig) {
           status: "error",
           stage: "failed",
           progress: 100,
-          errorMessage: msg,
+          errorText: msg,
           finished: true,
         },
         cfg
