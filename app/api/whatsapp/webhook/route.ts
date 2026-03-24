@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
 
@@ -210,12 +210,18 @@ async function findCodClienteByPhone(
   return null;
 }
 
-async function handleIncomingMessage(conn: PoolConnection, value: any, msg: any) {
+async function handleIncomingMessage(
+  conn: PoolConnection,
+  msg: any,
+  rawPayload: unknown
+) {
   const from = normalizePhone(msg?.from);
   if (!from) return;
 
   const wamid = msg?.id ? String(msg.id) : null;
   const tipo = String(msg?.type || "unknown").toLowerCase();
+
+  const codCliente = await findCodClienteByPhone(conn, from);
 
   let contenido: string | null = null;
   let idOpcion: string | null = null;
@@ -315,25 +321,21 @@ async function handleIncomingMessage(conn: PoolConnection, value: any, msg: any)
     ]
   );
 
-  await conn.execute(
-    `
-    INSERT INTO eventos_whatsapp (
-      telefono,
-      id_mensaje_whatsapp,
-      tipo_evento,
-      payload_json,
-      fecha_evento
-    ) VALUES (?, ?, 'incoming_message', ?, NOW())
-    `,
-    [from, wamid, JSON.stringify(msg)]
+  await insertEvento(
+    conn,
+    "incoming_message",
+    rawPayload,
+    wamid,
+    from
   );
 
   await upsertConversation({
     conn,
     telefono: from,
+    codCliente,
     ultimoMensaje: contenido,
     ultimoTipo: "IN",
-    incrementUnread: true,
+    incrementarUnread: true,
   });
 }
 
