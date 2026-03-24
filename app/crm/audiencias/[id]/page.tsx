@@ -129,9 +129,8 @@ function MetricCard({
 
 export default async function Page({ params }: PageProps) {
   const { id } = await params;
-
   const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  process.env.APP_BASE_URL || "http://localhost:3000";
 
   const res = await fetch(`${baseUrl}/api/crm/audiencias/${id}`, {
     cache: "no-store",

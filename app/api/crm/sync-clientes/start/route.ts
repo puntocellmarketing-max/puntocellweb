@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
-import { crmPool } from "@/lib/db-crm";
 
 export const runtime = "nodejs";
 
@@ -21,7 +20,9 @@ type SyncPayload = {
     password?: string;
   };
   filters?: {
+    codCategoria?: number | null;
     categoria?: string | null;
+    codZona?: number | null;
     zona?: string | null;
     ultimoPagoDesde?: string | null;
     ultimoPagoHasta?: string | null;
@@ -34,227 +35,200 @@ type SyncPayload = {
   };
 };
 
-function safeInt(value: any, fallback: number, min: number, max: number) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, Math.trunc(n)));
-}
+type JobUpdate = {
+  status?: "pending" | "running" | "success" | "error";
+  stage?: string | null;
+  progress?: number | null;
+  totalLeidos?: number | null;
+  totalProcesados?: number | null;
+  totalValidos?: number | null;
+  totalInvalidos?: number | null;
+  finished?: boolean;
+  errorMessage?: string | null;
+};
 
-function safeNumberOrNull(value: any) {
+type RunSyncConfig = {
+  localHost: string;
+  localPort: number;
+  localDb: string;
+  localUser: string;
+  localPass: string;
+  localView: string;
+  cloudHost: string;
+  cloudPort: number;
+  cloudDb: string;
+  cloudUser: string;
+  cloudPass: string;
+  codCategoria: number | null;
+  categoria: string | null;
+  codZona: number | null;
+  zona: string | null;
+  ultimoPagoDesde: string | null;
+  ultimoPagoHasta: string | null;
+  diasAtrasoMin: number | null;
+  saldoMin: number | null;
+  soloTelefonosValidos: boolean;
+  limit: number | null;
+};
+
+function safeNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
 
-function assertViewName(view: string) {
-  if (!/^[a-zA-Z0-9_]+$/.test(view)) {
+function safeStringOrNull(value: unknown): string | null {
+  const s = String(value ?? "").trim();
+  return s ? s : null;
+}
+
+function sanitizeViewName(view: string): string {
+  const clean = String(view || "").trim();
+  if (!/^[A-Za-z0-9_$.]+$/.test(clean)) {
     throw new Error("Nombre de vista inválido.");
   }
+  return clean;
 }
 
-function isValidDateOnly(value: string | null): boolean {
-  if (!value) return true;
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+function createJobId(): string {
+  return `${Math.random().toString(36).slice(2, 10)}-${Date.now()
+    .toString(36)
+    .slice(-6)}`;
 }
 
-async function createJob(jobId: string, filtersJson: string | null) {
-  await crmPool.execute(
-    `
-    INSERT INTO crm_sync_jobs (
-      job_id, status, stage, progress,
-      total_leidos, total_procesados, total_validos, total_invalidos,
-      error_text, filters_json, started_at, finished_at
-    ) VALUES (?, 'idle', 'created', 0, 0, 0, 0, 0, NULL, ?, NOW(), NULL)
-    `,
-    [jobId, filtersJson]
-  );
+async function openCloudConnection(cfg: RunSyncConfig) {
+  return mysql.createConnection({
+    host: cfg.cloudHost,
+    port: cfg.cloudPort,
+    user: cfg.cloudUser,
+    password: cfg.cloudPass,
+    database: cfg.cloudDb,
+    charset: "utf8mb4",
+    connectTimeout: 15000,
+  });
 }
 
-async function appendLog(
-  jobId: string,
-  level: "info" | "success" | "error",
-  message: string
-) {
-  await crmPool.execute(
-    `
-    INSERT INTO crm_sync_job_logs (job_id, level, message)
-    VALUES (?, ?, ?)
-    `,
-    [jobId, level, message]
-  );
+async function appendLog(jobId: string, level: string, message: string, cfg: RunSyncConfig) {
+  const conn = await openCloudConnection(cfg);
+  try {
+    await conn.execute(
+      `
+      INSERT INTO crm_sync_job_logs (
+        job_id,
+        level,
+        message,
+        created_at
+      ) VALUES (?, ?, ?, NOW())
+      `,
+      [jobId, level, message]
+    );
+  } finally {
+    await conn.end();
+  }
 }
 
-async function updateJob(
-  jobId: string,
-  patch: {
-    status?: "idle" | "running" | "success" | "error";
-    stage?: string;
-    progress?: number;
-    totalLeidos?: number;
-    totalProcesados?: number;
-    totalValidos?: number;
-    totalInvalidos?: number;
-    errorText?: string | null;
-    finished?: boolean;
-  }
-) {
-  const sets: string[] = [];
-  const params: any[] = [];
+async function updateJob(jobId: string, data: JobUpdate, cfg: RunSyncConfig) {
+  const conn = await openCloudConnection(cfg);
+  try {
+    const fields: string[] = [];
+    const params: any[] = [];
 
-  if (patch.status !== undefined) {
-    sets.push("status = ?");
-    params.push(patch.status);
-  }
-  if (patch.stage !== undefined) {
-    sets.push("stage = ?");
-    params.push(patch.stage);
-  }
-  if (patch.progress !== undefined) {
-    sets.push("progress = ?");
-    params.push(patch.progress);
-  }
-  if (patch.totalLeidos !== undefined) {
-    sets.push("total_leidos = ?");
-    params.push(patch.totalLeidos);
-  }
-  if (patch.totalProcesados !== undefined) {
-    sets.push("total_procesados = ?");
-    params.push(patch.totalProcesados);
-  }
-  if (patch.totalValidos !== undefined) {
-    sets.push("total_validos = ?");
-    params.push(patch.totalValidos);
-  }
-  if (patch.totalInvalidos !== undefined) {
-    sets.push("total_invalidos = ?");
-    params.push(patch.totalInvalidos);
-  }
-  if (patch.errorText !== undefined) {
-    sets.push("error_text = ?");
-    params.push(patch.errorText);
-  }
-  if (patch.finished) {
-    sets.push("finished_at = NOW()");
-  }
+    if (data.status !== undefined) {
+      fields.push("status = ?");
+      params.push(data.status);
+    }
+    if (data.stage !== undefined) {
+      fields.push("stage = ?");
+      params.push(data.stage);
+    }
+    if (data.progress !== undefined) {
+      fields.push("progress = ?");
+      params.push(data.progress);
+    }
+    if (data.totalLeidos !== undefined) {
+      fields.push("total_leidos = ?");
+      params.push(data.totalLeidos);
+    }
+    if (data.totalProcesados !== undefined) {
+      fields.push("total_procesados = ?");
+      params.push(data.totalProcesados);
+    }
+    if (data.totalValidos !== undefined) {
+      fields.push("total_validos = ?");
+      params.push(data.totalValidos);
+    }
+    if (data.totalInvalidos !== undefined) {
+      fields.push("total_invalidos = ?");
+      params.push(data.totalInvalidos);
+    }
+    if (data.errorMessage !== undefined) {
+      fields.push("error_message = ?");
+      params.push(data.errorMessage);
+    }
+    if (data.finished === true) {
+      fields.push("finished_at = NOW()");
+    }
 
-  if (!sets.length) return;
+    fields.push("updated_at = NOW()");
 
-  params.push(jobId);
-
-  await crmPool.execute(
-    `
-    UPDATE crm_sync_jobs
-    SET ${sets.join(", ")}
-    WHERE job_id = ?
-    `,
-    params
-  );
+    await conn.execute(
+      `
+      UPDATE crm_sync_jobs
+      SET ${fields.join(", ")}
+      WHERE job_id = ?
+      `,
+      [...params, jobId]
+    );
+  } finally {
+    await conn.end();
+  }
 }
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as SyncPayload;
 
-    if (!body?.local || !body?.cloud) {
+    const localHost = safeStringOrNull(body.local?.host);
+    const localPort = safeNumberOrNull(body.local?.port) ?? 3306;
+    const localDb = safeStringOrNull(body.local?.database);
+    const localUser = safeStringOrNull(body.local?.user);
+    const localPass = String(body.local?.password ?? "");
+    const localView = sanitizeViewName(body.local?.view || "");
+
+    const cloudHost = safeStringOrNull(body.cloud?.host);
+    const cloudPort = safeNumberOrNull(body.cloud?.port) ?? 3306;
+    const cloudDb = safeStringOrNull(body.cloud?.database);
+    const cloudUser = safeStringOrNull(body.cloud?.user);
+    const cloudPass = String(body.cloud?.password ?? "");
+
+    if (!localHost || !localDb || !localUser) {
       return NextResponse.json(
-        { ok: false, error: "Payload inválido." },
-        { status: 400 }
-      );
-    }
-
-    const localHost = String(body.local.host || "").trim();
-    const localPort = safeInt(body.local.port ?? 3306, 3306, 1, 65535);
-    const localDb = String(body.local.database || "").trim();
-    const localUser = String(body.local.user || "").trim();
-    const localPass = String(body.local.password || "");
-    const localView = String(body.local.view || "").trim();
-
-    const cloudHost = String(body.cloud.host || "").trim();
-    const cloudPort = safeInt(body.cloud.port ?? 3306, 3306, 1, 65535);
-    const cloudDb = String(body.cloud.database || "").trim();
-    const cloudUser = String(body.cloud.user || "").trim();
-    const cloudPass = String(body.cloud.password || "");
-
-    const categoria = String(body.filters?.categoria || "").trim() || null;
-    const zona = String(body.filters?.zona || "").trim() || null;
-    const ultimoPagoDesde =
-      String(body.filters?.ultimoPagoDesde || "").trim() || null;
-    const ultimoPagoHasta =
-      String(body.filters?.ultimoPagoHasta || "").trim() || null;
-    const diasAtrasoMin = safeNumberOrNull(body.filters?.diasAtrasoMin);
-    const saldoMin = safeNumberOrNull(body.filters?.saldoMin);
-    const soloTelefonosValidos = body.filters?.soloTelefonosValidos !== false;
-
-    const limit = body.options?.limit
-      ? safeInt(body.options.limit, 100, 1, 200000)
-      : null;
-
-    if (!localHost || !localDb || !localUser || !localView) {
-      return NextResponse.json(
-        { ok: false, error: "Faltan datos de la base local." },
+        { ok: false, error: "Faltan datos de conexión local." },
         { status: 400 }
       );
     }
 
     if (!cloudHost || !cloudDb || !cloudUser) {
       return NextResponse.json(
-        { ok: false, error: "Faltan datos de la base nube." },
+        { ok: false, error: "Faltan datos de conexión nube." },
         { status: 400 }
       );
     }
 
-    assertViewName(localView);
+    const codCategoria = safeNumberOrNull(body.filters?.codCategoria);
+    const categoria = safeStringOrNull(body.filters?.categoria);
 
-    if (!isValidDateOnly(ultimoPagoDesde)) {
-      return NextResponse.json(
-        { ok: false, error: "ultimoPagoDesde debe tener formato YYYY-MM-DD." },
-        { status: 400 }
-      );
-    }
+    const codZona = safeNumberOrNull(body.filters?.codZona);
+    const zona = safeStringOrNull(body.filters?.zona);
 
-    if (!isValidDateOnly(ultimoPagoHasta)) {
-      return NextResponse.json(
-        { ok: false, error: "ultimoPagoHasta debe tener formato YYYY-MM-DD." },
-        { status: 400 }
-      );
-    }
+    const ultimoPagoDesde = safeStringOrNull(body.filters?.ultimoPagoDesde);
+    const ultimoPagoHasta = safeStringOrNull(body.filters?.ultimoPagoHasta);
+    const diasAtrasoMin = safeNumberOrNull(body.filters?.diasAtrasoMin);
+    const saldoMin = safeNumberOrNull(body.filters?.saldoMin);
+    const soloTelefonosValidos = Boolean(body.filters?.soloTelefonosValidos);
+    const limit = safeNumberOrNull(body.options?.limit);
 
-    if (ultimoPagoDesde && ultimoPagoHasta && ultimoPagoDesde > ultimoPagoHasta) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "ultimoPagoDesde no puede ser mayor que ultimoPagoHasta.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const jobId =
-      Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
-
-    const filtersObject = {
-      categoria,
-      zona,
-      ultimoPagoDesde,
-      ultimoPagoHasta,
-      diasAtrasoMin,
-      saldoMin,
-      soloTelefonosValidos,
-      limit,
-      localView,
-    };
-
-    const filtersJson = JSON.stringify(filtersObject);
-
-    await createJob(jobId, filtersJson);
-    await appendLog(jobId, "info", "Job creado. Iniciando sincronización filtrada...");
-    await appendLog(
-      jobId,
-      "info",
-      `Filtros -> categoria: ${categoria ?? "(todas)"}, zona: ${zona ?? "(todas)"}, ultimo_pago_desde: ${ultimoPagoDesde ?? "(sin filtro)"}, ultimo_pago_hasta: ${ultimoPagoHasta ?? "(sin filtro)"}, dias_atraso_min: ${diasAtrasoMin ?? "(sin filtro)"}, saldo_min: ${saldoMin ?? "(sin filtro)"}, solo_validos: ${soloTelefonosValidos ? "SI" : "NO"}`
-    );
-
-    void runSyncJob(jobId, {
+    const cfg: RunSyncConfig = {
       localHost,
       localPort,
       localDb,
@@ -266,7 +240,9 @@ export async function POST(req: Request) {
       cloudDb,
       cloudUser,
       cloudPass,
+      codCategoria,
       categoria,
+      codZona,
       zona,
       ultimoPagoDesde,
       ultimoPagoHasta,
@@ -274,7 +250,72 @@ export async function POST(req: Request) {
       saldoMin,
       soloTelefonosValidos,
       limit,
-    });
+    };
+
+    const filtersObject = {
+      codCategoria,
+      categoria,
+      codZona,
+      zona,
+      ultimoPagoDesde,
+      ultimoPagoHasta,
+      diasAtrasoMin,
+      saldoMin,
+      soloTelefonosValidos,
+      limit,
+      localView,
+    };
+
+    const jobId = createJobId();
+
+    const cloudConn = await openCloudConnection(cfg);
+    try {
+      await cloudConn.execute(
+        `
+        INSERT INTO crm_sync_jobs (
+          job_id,
+          status,
+          stage,
+          progress,
+          filters_json,
+          total_leidos,
+          total_procesados,
+          total_validos,
+          total_invalidos,
+          created_at,
+          updated_at
+        ) VALUES (?, 'pending', 'queued', 0, ?, 0, 0, 0, 0, NOW(), NOW())
+        `,
+        [jobId, JSON.stringify(filtersObject)]
+      );
+
+      await cloudConn.execute(
+        `
+        INSERT INTO crm_sync_job_logs (
+          job_id,
+          level,
+          message,
+          created_at
+        ) VALUES (?, 'info', ?, NOW())
+        `,
+        [
+          jobId,
+          `Sync iniciado. codCategoria: ${codCategoria ?? "(sin filtro)"}, categoria: ${
+            categoria ?? "(sin filtro)"
+          }, codZona: ${codZona ?? "(sin filtro)"}, zona: ${
+            zona ?? "(sin filtro)"
+          }, ultimo_pago_desde: ${ultimoPagoDesde ?? "(sin filtro)"}, ultimo_pago_hasta: ${
+            ultimoPagoHasta ?? "(sin filtro)"
+          }, dias_atraso_min: ${diasAtrasoMin ?? "(sin filtro)"}, saldo_min: ${
+            saldoMin ?? "(sin filtro)"
+          }, solo_validos: ${soloTelefonosValidos ? "SI" : "NO"}`
+        ]
+      );
+    } finally {
+      await cloudConn.end();
+    }
+
+    void runSyncJob(jobId, cfg);
 
     return NextResponse.json({
       ok: true,
@@ -289,40 +330,21 @@ export async function POST(req: Request) {
   }
 }
 
-async function runSyncJob(
-  jobId: string,
-  cfg: {
-    localHost: string;
-    localPort: number;
-    localDb: string;
-    localUser: string;
-    localPass: string;
-    localView: string;
-    cloudHost: string;
-    cloudPort: number;
-    cloudDb: string;
-    cloudUser: string;
-    cloudPass: string;
-    categoria: string | null;
-    zona: string | null;
-    ultimoPagoDesde: string | null;
-    ultimoPagoHasta: string | null;
-    diasAtrasoMin: number | null;
-    saldoMin: number | null;
-    soloTelefonosValidos: boolean;
-    limit: number | null;
-  }
-) {
+async function runSyncJob(jobId: string, cfg: RunSyncConfig) {
   let localConn: mysql.Connection | null = null;
   let cloudConn: mysql.Connection | null = null;
 
   try {
-    await updateJob(jobId, {
-      status: "running",
-      stage: "connecting_local",
-      progress: 5,
-    });
-    await appendLog(jobId, "info", "Conectando a base local...");
+    await updateJob(
+      jobId,
+      {
+        status: "running",
+        stage: "connecting_local",
+        progress: 5,
+      },
+      cfg
+    );
+    await appendLog(jobId, "info", "Conectando a base local.", cfg);
 
     localConn = await mysql.createConnection({
       host: cfg.localHost,
@@ -334,23 +356,33 @@ async function runSyncJob(
       connectTimeout: 15000,
     });
 
-    await appendLog(jobId, "success", "Conexión local OK.");
+    await appendLog(jobId, "success", "Conexión local OK.", cfg);
 
-    await updateJob(jobId, {
-      stage: "reading_local",
-      progress: 15,
-    });
-    await appendLog(jobId, "info", "Construyendo consulta con filtros...");
+    await updateJob(
+      jobId,
+      {
+        stage: "reading_local",
+        progress: 15,
+      },
+      cfg
+    );
+    await appendLog(jobId, "info", "Construyendo consulta con filtros...", cfg);
 
     const where: string[] = ["1=1"];
     const params: any[] = [];
 
-    if (cfg.categoria) {
+    if (cfg.codCategoria !== null) {
+      where.push("codCategoria = ?");
+      params.push(cfg.codCategoria);
+    } else if (cfg.categoria) {
       where.push("categoria = ?");
       params.push(cfg.categoria);
     }
 
-    if (cfg.zona) {
+    if (cfg.codZona !== null) {
+      where.push("codZona = ?");
+      params.push(cfg.codZona);
+    } else if (cfg.zona) {
       where.push("zona = ?");
       params.push(cfg.zona);
     }
@@ -379,7 +411,7 @@ async function runSyncJob(
       where.push("telefono_valido = 1");
     }
 
-    const limitSql = cfg.limit ? ` LIMIT ${cfg.limit}` : "";
+    const limitSql = cfg.limit && cfg.limit > 0 ? ` LIMIT ${cfg.limit}` : "";
 
     const sqlLocal = `
       SELECT
@@ -396,56 +428,68 @@ async function runSyncJob(
         dias_atraso,
         ultimo_pago,
         saldo,
+        codCategoria,
         categoria,
+        codZona,
         zona
       FROM ${cfg.localView}
       WHERE ${where.join(" AND ")}
       ${limitSql}
     `;
 
-    await appendLog(jobId, "info", "Leyendo vista local filtrada...");
+    await appendLog(jobId, "info", "Leyendo vista local filtrada.", cfg);
 
     const [rowsRaw] = await localConn.query(sqlLocal, params);
     const rows = rowsRaw as any[];
 
-    await updateJob(jobId, {
-      totalLeidos: rows.length,
-      progress: 30,
-    });
-    await appendLog(jobId, "success", `Vista leída. Registros encontrados: ${rows.length}`);
+    await updateJob(
+      jobId,
+      {
+        totalLeidos: rows.length,
+        progress: 30,
+      },
+      cfg
+    );
+    await appendLog(
+      jobId,
+      "success",
+      `Vista leída. Registros encontrados: ${rows.length}`,
+      cfg
+    );
 
     if (!rows.length) {
-      await updateJob(jobId, {
-        status: "success",
-        stage: "finished",
-        progress: 100,
-        finished: true,
-      });
+      await updateJob(
+        jobId,
+        {
+          status: "success",
+          stage: "finished",
+          progress: 100,
+          finished: true,
+        },
+        cfg
+      );
       await appendLog(
         jobId,
         "success",
-        "No hay registros para sincronizar con los filtros aplicados."
+        "No hay registros para sincronizar con los filtros aplicados.",
+        cfg
       );
       return;
     }
 
-    await updateJob(jobId, {
-      stage: "connecting_cloud",
-      progress: 35,
-    });
-    await appendLog(jobId, "info", "Conectando a base nube...");
+    await updateJob(
+      jobId,
+      {
+        stage: "connecting_cloud",
+        progress: 35,
+      },
+      cfg
+    );
+    await appendLog(jobId, "info", "Conectando a base nube...", cfg);
 
-    cloudConn = await mysql.createConnection({
-      host: cfg.cloudHost,
-      port: cfg.cloudPort,
-      user: cfg.cloudUser,
-      password: cfg.cloudPass,
-      database: cfg.cloudDb,
-      charset: "utf8mb4",
-      connectTimeout: 15000,
-    });
+    cloudConn = await openCloudConnection(cfg);
 
-    await appendLog(jobId, "success", "Conexión nube OK.");
+    await appendLog(jobId, "success", "Conexión nube OK.", cfg);
 
     const sqlUpsert = `
       INSERT INTO crm_clientes_sync (
@@ -463,12 +507,15 @@ async function runSyncJob(
         dias_atraso,
         ultimo_pago,
         saldo,
+        cod_categoria,
         categoria,
+        cod_zona,
         zona,
         seleccionado_para_campania,
-        fecha_sync
+        fecha_sync,
+        fecha_actualizacion
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW()
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW()
       )
       ON DUPLICATE KEY UPDATE
         job_id = VALUES(job_id),
@@ -484,105 +531,120 @@ async function runSyncJob(
         dias_atraso = VALUES(dias_atraso),
         ultimo_pago = VALUES(ultimo_pago),
         saldo = VALUES(saldo),
+        cod_categoria = VALUES(cod_categoria),
         categoria = VALUES(categoria),
+        cod_zona = VALUES(cod_zona),
         zona = VALUES(zona),
         seleccionado_para_campania = 1,
-        fecha_sync = NOW()
+        fecha_actualizacion = NOW()
     `;
 
-    await cloudConn.beginTransaction();
+    let processed = 0;
+    let validos = 0;
+    let invalidos = 0;
 
-    await updateJob(jobId, {
-      stage: "upserting",
-      progress: 40,
-    });
-    await appendLog(jobId, "info", "Insertando/actualizando registros en crm_clientes_sync...");
+    await updateJob(
+      jobId,
+      {
+        stage: "writing_cloud",
+        progress: 45,
+      },
+      cfg
+    );
 
-    let totalValidos = 0;
-    let totalInvalidos = 0;
-    let totalProcesados = 0;
-
-    for (const r of rows) {
-      const telefonoValido = Number(r.telefono_valido ?? 0) === 1 ? 1 : 0;
-
-      if (telefonoValido === 1) totalValidos++;
-      else totalInvalidos++;
+    for (const row of rows) {
+      const telefonoValido = Number(row.telefono_valido ?? 0);
+      if (telefonoValido === 1) validos += 1;
+      else invalidos += 1;
 
       await cloudConn.execute(sqlUpsert, [
         jobId,
-        r.codCliente ?? null,
-        r.cliente ?? null,
-        r.celular_original ?? null,
-        r.telefono_original ?? null,
-        r.telefono_fuente ?? "NINGUNO",
-        r.telefono_raw ?? null,
-        r.telefono_normalizado ?? null,
+        Number(row.codCliente),
+        row.cliente ?? null,
+        row.celular_original ?? null,
+        row.telefono_original ?? null,
+        row.telefono_fuente ?? null,
+        row.telefono_raw ?? null,
+        row.telefono_normalizado ?? null,
         telefonoValido,
-        r.motivo_telefono_invalido ?? null,
-        Number(r.requiere_revision ?? 0) === 1 ? 1 : 0,
-        Number(r.dias_atraso ?? 0),
-        r.ultimo_pago ?? null,
-        Number(r.saldo ?? 0),
-        r.categoria ?? null,
-        r.zona ?? null,
+        row.motivo_telefono_invalido ?? null,
+        Number(row.requiere_revision ?? 0),
+        row.dias_atraso == null ? null : Number(row.dias_atraso),
+        row.ultimo_pago ?? null,
+        row.saldo == null ? 0 : Number(row.saldo),
+        row.codCategoria == null ? null : Number(row.codCategoria),
+        row.categoria ?? null,
+        row.codZona == null ? null : Number(row.codZona),
+        row.zona ?? null,
       ]);
 
-      totalProcesados++;
+      processed += 1;
 
-      if (
-        totalProcesados === 1 ||
-        totalProcesados % 25 === 0 ||
-        totalProcesados === rows.length
-      ) {
-        const progress = Math.round(40 + (totalProcesados / rows.length) * 55);
+      if (processed % 50 === 0 || processed === rows.length) {
+        const progress = Math.min(95, 45 + Math.round((processed / rows.length) * 50));
 
-        await updateJob(jobId, {
-          progress: Math.min(progress, 95),
-          totalProcesados,
-          totalValidos,
-          totalInvalidos,
-        });
-
-        await appendLog(
+        await updateJob(
           jobId,
-          "info",
-          `Procesados ${totalProcesados}/${rows.length} | válidos: ${totalValidos} | inválidos: ${totalInvalidos}`
+          {
+            totalProcesados: processed,
+            totalValidos: validos,
+            totalInvalidos: invalidos,
+            progress,
+          },
+          cfg
         );
       }
     }
 
-    await cloudConn.commit();
+    await updateJob(
+      jobId,
+      {
+        status: "success",
+        stage: "finished",
+        progress: 100,
+        totalProcesados: processed,
+        totalValidos: validos,
+        totalInvalidos: invalidos,
+        finished: true,
+      },
+      cfg
+    );
 
-    await updateJob(jobId, {
-      status: "success",
-      stage: "finished",
-      progress: 100,
-      totalProcesados,
-      totalValidos,
-      totalInvalidos,
-      finished: true,
-    });
-
-    await appendLog(jobId, "success", "Sincronización filtrada completada correctamente.");
+    await appendLog(
+      jobId,
+      "success",
+      `Sincronización completada. Procesados: ${processed}, válidos: ${validos}, inválidos: ${invalidos}.`,
+      cfg
+    );
   } catch (e: any) {
+    const msg = e?.message || String(e);
+
     try {
-      if (cloudConn) await cloudConn.rollback();
+      await updateJob(
+        jobId,
+        {
+          status: "error",
+          stage: "failed",
+          progress: 100,
+          errorMessage: msg,
+          finished: true,
+        },
+        cfg
+      );
+      await appendLog(jobId, "error", msg, cfg);
     } catch {}
 
-    await updateJob(jobId, {
-      status: "error",
-      stage: "failed",
-      errorText: e?.message || String(e),
-      finished: true,
-    });
-
-    await appendLog(jobId, "error", `Error: ${e?.message || String(e)}`);
+    console.error("SYNC CLIENTES ERROR:", e);
   } finally {
-    try {
-      if (localConn) await localConn.end();
-    } catch {}
-    try {
-      if (cloudConn) await cloudConn.end();
-    } catch {}
+    if (localConn) {
+      try {
+        await localConn.end();
+      } catch {}
+    }
+    if (cloudConn) {
+      try {
+        await cloudConn.end();
+      } catch {}
+    }
   }
 }
