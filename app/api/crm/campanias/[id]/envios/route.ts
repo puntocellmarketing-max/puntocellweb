@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 type EnvioRow = RowDataPacket & {
   id_envio: number;
   cod_cliente: number | null;
+  cliente: string | null;
   telefono: string | null;
   plantilla: string | null;
   idioma: string | null;
@@ -19,12 +20,28 @@ type EnvioRow = RowDataPacket & {
   fecha_entregado: string | null;
   fecha_leido: string | null;
   fecha_fallo: string | null;
+
+  id_agenda: number | null;
+  estado_agenda: string | null;
+  tipo_gestion: string | null;
+  fecha_recordatorio: string | null;
 };
 
-function safeInt(value: string | null, fallback: number, min: number, max: number) {
+function safeInt(
+  value: string | null,
+  fallback: number,
+  min: number,
+  max: number
+) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+function buildSeguimiento(row: EnvioRow) {
+  if (!row.id_agenda) return "SIN_AGENDA";
+  if (!row.estado_agenda) return "AGENDADO";
+  return row.estado_agenda;
 }
 
 export async function GET(
@@ -49,11 +66,11 @@ export async function GET(
     const pageSize = safeInt(searchParams.get("pageSize"), 20, 1, 200);
     const offset = (page - 1) * pageSize;
 
-    const where: string[] = ["id_campania = ?"];
+    const where: string[] = ["ew.id_campania = ?"];
     const values: Array<string | number> = [idCampania];
 
     if (estado) {
-      where.push("estado = ?");
+      where.push("ew.estado = ?");
       values.push(estado);
     }
 
@@ -62,7 +79,7 @@ export async function GET(
     const [countRows] = await crmPool.query<RowDataPacket[]>(
       `
       SELECT COUNT(*) AS total
-      FROM envios_whatsapp
+      FROM envios_whatsapp ew
       ${whereSql}
       `,
       values
@@ -73,23 +90,90 @@ export async function GET(
     const [rows] = await crmPool.query<EnvioRow[]>(
       `
       SELECT
-        id_envio,
-        cod_cliente,
-        telefono,
-        plantilla,
-        idioma,
-        estado,
-        id_mensaje_whatsapp,
-        error_mensaje,
-        intentos,
-        fecha_creacion,
-        fecha_envio,
-        fecha_entregado,
-        fecha_leido,
-        fecha_fallo
-      FROM envios_whatsapp
+        ew.id_envio,
+        ew.cod_cliente,
+        cs.cliente,
+        ew.telefono,
+        ew.plantilla,
+        ew.idioma,
+        ew.estado,
+        ew.id_mensaje_whatsapp,
+        ew.error_mensaje,
+        ew.intentos,
+        ew.fecha_creacion,
+        ew.fecha_envio,
+        ew.fecha_entregado,
+        ew.fecha_leido,
+        ew.fecha_fallo,
+
+        ag.id_agenda,
+        ag.estado AS estado_agenda,
+        ag.tipo_gestion,
+        ag.fecha_recordatorio
+
+      FROM envios_whatsapp ew
+
+      LEFT JOIN crm_clientes_sync cs
+        ON cs.cod_cliente = ew.cod_cliente
+
+      LEFT JOIN agenda_crm ag
+        ON ag.id_agenda = COALESCE(
+          (
+            SELECT a1.id_agenda
+            FROM agenda_crm a1
+            WHERE a1.id_campania = ew.id_campania
+              AND a1.cod_cliente IS NOT NULL
+              AND ew.cod_cliente IS NOT NULL
+              AND a1.cod_cliente = ew.cod_cliente
+            ORDER BY
+              a1.fecha_recordatorio DESC,
+              a1.fecha_creacion DESC,
+              a1.id_agenda DESC
+            LIMIT 1
+          ),
+          (
+            SELECT a2.id_agenda
+            FROM agenda_crm a2
+            WHERE a2.id_campania = ew.id_campania
+              AND a2.telefono IS NOT NULL
+              AND ew.telefono IS NOT NULL
+              AND a2.telefono COLLATE utf8mb4_unicode_ci =
+                  ew.telefono COLLATE utf8mb4_unicode_ci
+            ORDER BY
+              a2.fecha_recordatorio DESC,
+              a2.fecha_creacion DESC,
+              a2.id_agenda DESC
+            LIMIT 1
+          ),
+          (
+            SELECT a3.id_agenda
+            FROM agenda_crm a3
+            WHERE a3.cod_cliente IS NOT NULL
+              AND ew.cod_cliente IS NOT NULL
+              AND a3.cod_cliente = ew.cod_cliente
+            ORDER BY
+              a3.fecha_recordatorio DESC,
+              a3.fecha_creacion DESC,
+              a3.id_agenda DESC
+            LIMIT 1
+          ),
+          (
+            SELECT a4.id_agenda
+            FROM agenda_crm a4
+            WHERE a4.telefono IS NOT NULL
+              AND ew.telefono IS NOT NULL
+              AND a4.telefono COLLATE utf8mb4_unicode_ci =
+                  ew.telefono COLLATE utf8mb4_unicode_ci
+            ORDER BY
+              a4.fecha_recordatorio DESC,
+              a4.fecha_creacion DESC,
+              a4.id_agenda DESC
+            LIMIT 1
+          )
+        )
+
       ${whereSql}
-      ORDER BY id_envio DESC
+      ORDER BY ew.id_envio DESC
       LIMIT ? OFFSET ?
       `,
       [...values, pageSize, offset]
@@ -100,6 +184,7 @@ export async function GET(
       items: rows.map((row) => ({
         idEnvio: Number(row.id_envio),
         codCliente: row.cod_cliente !== null ? Number(row.cod_cliente) : null,
+        cliente: row.cliente || null,
         telefono: row.telefono,
         plantilla: row.plantilla,
         idioma: row.idioma || "es",
@@ -112,6 +197,13 @@ export async function GET(
         fechaEntregado: row.fecha_entregado,
         fechaLeido: row.fecha_leido,
         fechaFallo: row.fecha_fallo,
+
+        idAgenda: row.id_agenda !== null ? Number(row.id_agenda) : null,
+        agendado: !!row.id_agenda,
+        estadoAgenda: row.estado_agenda,
+        tipoGestion: row.tipo_gestion,
+        fechaRecordatorio: row.fecha_recordatorio,
+        seguimiento: buildSeguimiento(row),
       })),
       pagination: {
         page,
