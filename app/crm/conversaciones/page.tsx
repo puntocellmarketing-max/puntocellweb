@@ -24,6 +24,9 @@ type ChatMsg = {
   titulo_opcion?: string | null;
   fecha: string;
   estado_out?: string | null;
+  media_id?: string | null;
+  mime_type?: string | null;
+  media_url?: string | null;
 };
 
 const ESTADOS_GESTION = [
@@ -140,6 +143,147 @@ function StatCard({
         {label}
       </div>
       <div className={`mt-2 text-2xl font-semibold ${valueClass}`}>{value}</div>
+    </div>
+  );
+}
+
+function buildMediaUrl(m: ChatMsg) {
+  if (m.media_url && String(m.media_url).trim()) {
+    return m.media_url;
+  }
+
+  if (m.media_id && String(m.media_id).trim()) {
+    return `/api/whatsapp/media/${encodeURIComponent(m.media_id)}`;
+  }
+
+  return null;
+}
+
+function isImageMessage(m: ChatMsg) {
+  return m.tipo === "image" && !!buildMediaUrl(m);
+}
+
+function isAudioMessage(m: ChatMsg) {
+  return m.tipo === "audio" && !!buildMediaUrl(m);
+}
+
+function isVideoMessage(m: ChatMsg) {
+  return m.tipo === "video" && !!buildMediaUrl(m);
+}
+
+function isDocumentMessage(m: ChatMsg) {
+  return m.tipo === "document" && !!buildMediaUrl(m);
+}
+
+function renderMessageContent(m: ChatMsg) {
+  const mediaUrl = buildMediaUrl(m);
+
+  if (isImageMessage(m) && mediaUrl) {
+    return (
+      <div className="space-y-2">
+        <img
+          src={mediaUrl}
+          alt={m.texto || "Imagen recibida"}
+          className="max-h-[360px] w-auto max-w-full rounded-2xl border border-slate-200 bg-white object-contain"
+          loading="lazy"
+        />
+        {m.texto && m.texto !== "[Imagen recibida]" ? (
+          <div className="whitespace-pre-wrap break-words text-sm leading-6">
+            {m.texto}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (isAudioMessage(m) && mediaUrl) {
+    return (
+      <div className="space-y-2">
+        <audio controls preload="none" className="max-w-full">
+          <source src={mediaUrl} type={m.mime_type || "audio/ogg"} />
+          Tu navegador no soporta audio.
+        </audio>
+        {m.texto && m.texto !== "[Audio recibido]" ? (
+          <div className="whitespace-pre-wrap break-words text-sm leading-6">
+            {m.texto}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (isVideoMessage(m) && mediaUrl) {
+    return (
+      <div className="space-y-2">
+        <video
+          controls
+          preload="metadata"
+          className="max-h-[360px] max-w-full rounded-2xl border border-slate-200 bg-black"
+        >
+          <source src={mediaUrl} type={m.mime_type || "video/mp4"} />
+          Tu navegador no soporta video.
+        </video>
+        {m.texto && m.texto !== "[Video recibido]" ? (
+          <div className="whitespace-pre-wrap break-words text-sm leading-6">
+            {m.texto}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (isDocumentMessage(m) && mediaUrl) {
+    return (
+      <div className="space-y-2">
+        <a
+          href={mediaUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+        >
+          Abrir documento
+        </a>
+
+        {m.mime_type ? (
+          <div className="text-xs text-slate-500">{m.mime_type}</div>
+        ) : null}
+
+        {m.texto ? (
+          <div className="whitespace-pre-wrap break-words text-sm leading-6">
+            {m.texto}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (
+    (m.tipo === "image" ||
+      m.tipo === "audio" ||
+      m.tipo === "video" ||
+      m.tipo === "document") &&
+    !mediaUrl
+  ) {
+    return (
+      <div className="space-y-2">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Medio recibido, pero sin URL disponible.
+        </div>
+        <div className="text-xs text-slate-500">
+          media_id: {m.media_id || "—"}
+        </div>
+        {m.texto ? (
+          <div className="whitespace-pre-wrap break-words text-sm leading-6">
+            {m.texto}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="whitespace-pre-wrap break-words text-sm leading-6">
+      {m.texto || <span className="text-slate-500">(sin texto)</span>}
     </div>
   );
 }
@@ -667,9 +811,7 @@ export default function CRMConversationsPage() {
                       ) : null}
                     </div>
 
-                    <div className="whitespace-pre-wrap break-words text-sm leading-6">
-                      {m.texto || <span className="text-slate-500">(sin texto)</span>}
-                    </div>
+                    {renderMessageContent(m)}
 
                     {(m.titulo_opcion || m.id_opcion) && (
                       <div className="mt-2 rounded-xl bg-white/60 p-2 text-[11px] text-slate-700">

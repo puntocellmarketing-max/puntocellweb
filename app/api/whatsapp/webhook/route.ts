@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import type { PoolConnection, RowDataPacket } from "mysql2/promise";
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
 
@@ -293,9 +293,67 @@ async function handleIncomingMessage(
     contenido = `[Mensaje ${tipo} recibido]`;
   }
 
+  if (wamid) {
+    const [result] = await conn.execute<ResultSetHeader>(
+      `
+      INSERT INTO mensajes_entrantes (
+        cod_cliente,
+        id_mensaje_whatsapp,
+        telefono,
+        contenido,
+        tipo,
+        id_opcion,
+        titulo_opcion,
+        media_id,
+        mime_type,
+        media_sha256,
+        fecha_recibido
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        cod_cliente = COALESCE(VALUES(cod_cliente), cod_cliente),
+        telefono = VALUES(telefono),
+        contenido = VALUES(contenido),
+        tipo = VALUES(tipo),
+        id_opcion = VALUES(id_opcion),
+        titulo_opcion = VALUES(titulo_opcion),
+        media_id = VALUES(media_id),
+        mime_type = VALUES(mime_type),
+        media_sha256 = VALUES(media_sha256)
+      `,
+      [
+        codCliente,
+        wamid,
+        from,
+        contenido,
+        tipo,
+        idOpcion,
+        tituloOpcion,
+        mediaId,
+        mimeType,
+        mediaSha256,
+      ]
+    );
+
+    const insertedNewRow = result.affectedRows === 1;
+
+    await insertEvento(conn, "incoming_message", rawPayload, wamid, from);
+
+    await upsertConversation({
+      conn,
+      telefono: from,
+      codCliente,
+      ultimoMensaje: contenido,
+      ultimoTipo: "IN",
+      incrementarUnread: insertedNewRow,
+    });
+
+    return;
+  }
+
   await conn.execute(
     `
     INSERT INTO mensajes_entrantes (
+      cod_cliente,
       id_mensaje_whatsapp,
       telefono,
       contenido,
@@ -306,10 +364,10 @@ async function handleIncomingMessage(
       mime_type,
       media_sha256,
       fecha_recibido
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `,
     [
-      wamid,
+      codCliente,
       from,
       contenido,
       tipo,
@@ -321,13 +379,7 @@ async function handleIncomingMessage(
     ]
   );
 
-  await insertEvento(
-    conn,
-    "incoming_message",
-    rawPayload,
-    wamid,
-    from
-  );
+  await insertEvento(conn, "incoming_message", rawPayload, null, from);
 
   await upsertConversation({
     conn,

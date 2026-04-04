@@ -51,6 +51,11 @@ const quickAccess: QuickAccess[] = [
     description: "Controlar seguimientos, alertas, promesas y resolución.",
     href: "/crm/agenda/dashboard",
   },
+  {
+    title: "Reportes",
+    description: "Analizar cierres, recuperación, resultados y comisiones.",
+    href: "/crm/reportes",
+  },
 ];
 
 const heroMetrics: HeroMetric[] = [
@@ -382,13 +387,14 @@ export default function CRMHomePage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <ActionButton href="/crm/sync-clientes" label="Validar datos" />
-            <ActionButton href="/crm/audiencias" label="Crear audiencia" />
-            <ActionButton href="/crm/conversaciones" label="Revisar inbox" />
-            <ActionButton href="/crm/agenda/dashboard" label="Abrir agenda" />
-            <ActionButton href="/crm/agendar" label="Registrar seguimiento" primary />
-          </div>
+			<div className="flex flex-wrap gap-3">
+			  <ActionButton href="/crm/sync-clientes" label="Validar datos" />
+			  <ActionButton href="/crm/audiencias" label="Crear audiencia" />
+			  <ActionButton href="/crm/conversaciones" label="Revisar inbox" />
+			  <ActionButton href="/crm/agenda/dashboard" label="Abrir agenda" />
+			  <ActionButton href="/crm/reportes" label="Abrir reportes" />
+			  <ActionButton href="/crm/agendar" label="Registrar seguimiento" primary />
+			</div>
         </div>
       </section>
     </div>

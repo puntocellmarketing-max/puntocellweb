@@ -14,6 +14,9 @@ type HistorialRow = RowDataPacket & {
   titulo_opcion: string | null;
   fecha: string | null;
   estado_out: string | null;
+  media_id: string | null;
+  mime_type: string | null;
+  media_url: string | null;
 };
 
 export async function GET(req: Request) {
@@ -45,11 +48,20 @@ export async function GET(req: Request) {
           me.id_opcion AS id_opcion,
           me.titulo_opcion AS titulo_opcion,
           me.fecha_recibido AS fecha,
-          NULL AS estado_out
+          NULL AS estado_out,
+          me.media_id AS media_id,
+          me.mime_type AS mime_type,
+          CASE
+            WHEN me.media_id IS NOT NULL AND TRIM(me.media_id) <> ''
+              THEN CONCAT('/api/whatsapp/media/', me.media_id)
+            ELSE NULL
+          END AS media_url
         FROM mensajes_entrantes me
         WHERE me.telefono = ?
       )
+
       UNION ALL
+
       (
         SELECT
           CONCAT('OUT-', ew.id_envio) AS id,
@@ -64,10 +76,14 @@ export async function GET(req: Request) {
           NULL AS id_opcion,
           NULL AS titulo_opcion,
           COALESCE(ew.fecha_envio, ew.fecha_creacion) AS fecha,
-          ew.estado AS estado_out
+          ew.estado AS estado_out,
+          NULL AS media_id,
+          NULL AS mime_type,
+          NULL AS media_url
         FROM envios_whatsapp ew
         WHERE ew.telefono = ?
       )
+
       ORDER BY fecha ASC
       LIMIT ${limit}
     `;

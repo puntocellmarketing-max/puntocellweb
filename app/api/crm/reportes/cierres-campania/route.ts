@@ -47,6 +47,31 @@ type ClosePayload = {
   observacion?: string | null;
 };
 
+type CierreListRow = RowDataPacket & {
+  id_cierre: number;
+  id_campania: number;
+  id_audiencia: number | null;
+  fecha_desde: string;
+  fecha_hasta: string;
+  fecha_cierre: string;
+  porcentaje_comision: number;
+  total_notificados: number;
+  total_agendados: number;
+  total_no_agendados: number;
+  total_clientes_con_pago: number;
+  total_clientes_comisionables: number;
+  total_pagos_encontrados: number;
+  monto_total_recuperado: number;
+  monto_total_comisionable: number;
+  monto_total_comision: number;
+  estado: string;
+  observacion: string | null;
+  creado_por: string | null;
+  fecha_creacion: string;
+  fecha_actualizacion: string;
+  nombre_campania: string | null;
+};
+
 let localPool: Pool | null = null;
 
 function getLocalPool() {
@@ -71,29 +96,30 @@ function toSqlDate(value: string | Date) {
   if (Number.isNaN(d.getTime())) {
     throw new Error(`Fecha inválida: ${value}`);
   }
-  return d.toISOString().slice(0, 10);
-}
-
-function toSqlDateTimeEndOfDay(value: string | Date) {
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) {
-    throw new Error(`Fecha inválida: ${value}`);
-  }
 
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} 23:59:59`;
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function toSqlDateTimeStartOfDay(value: string | Date) {
+  return `${toSqlDate(value)} 00:00:00`;
+}
+
+function toSqlDateTimeEndOfDay(value: string | Date) {
+  return `${toSqlDate(value)} 23:59:59`;
+}
+
+function round2(n: number) {
+  return Math.round((Number(n) || 0) * 100) / 100;
 }
 
 function buildSeguimiento(row: BaseClienteRow) {
   if (!row.id_agenda) return "SIN_AGENDA";
   if (!row.estado_agenda) return "AGENDADO";
   return row.estado_agenda;
-}
-
-function round2(n: number) {
-  return Math.round((Number(n) || 0) * 100) / 100;
 }
 
 async function getCampaign(idCampania: number) {
@@ -169,15 +195,17 @@ async function getClientesCampania(idCampania: number) {
 
     INNER JOIN (
       SELECT
-        COALESCE(cod_cliente, 0) AS cod_cliente_group,
+        cod_cliente,
         MAX(id_envio) AS max_id_envio
       FROM envios_whatsapp
       WHERE id_campania = ?
-      GROUP BY COALESCE(cod_cliente, 0)
+        AND cod_cliente IS NOT NULL
+      GROUP BY cod_cliente
     ) ult
       ON ult.max_id_envio = ew.id_envio
 
     WHERE ew.id_campania = ?
+      AND ew.cod_cliente IS NOT NULL
     ORDER BY ew.id_envio DESC
     `,
     [idCampania, idCampania]
@@ -196,29 +224,106 @@ async function getPagosLocales(
   const localDb = getLocalPool();
   const placeholders = codClientes.map(() => "?").join(",");
 
-  // AJUSTE IMPORTANTE:
-  // Esta consulta asume que en tu sistema local:
-  // - ve_recibo tiene: codCliente, Fecha, Total, NroRecibo
-  // Si los nombres exactos cambian, solo se corrige este bloque.
   const [rows] = await localDb.query<PagoLocalRow[]>(
     `
     SELECT
       r.codCliente AS cod_cliente,
-      CAST(r.NroRecibo AS CHAR) AS nro_recibo,
+      CAST(r.Nrorecibo AS CHAR) AS nro_recibo,
       r.Fecha AS fecha_pago,
       r.Total AS monto_pagado,
-      CAST(r.NroRecibo AS CHAR) AS referencia
+      CONCAT(
+        COALESCE(r.NroSerie, ''),
+        CASE
+          WHEN r.NroSerie IS NOT NULL AND r.NroSerie <> '' THEN '-'
+          ELSE ''
+        END,
+        CAST(r.Nrorecibo AS CHAR)
+      ) AS referencia
     FROM ve_recibo r
     WHERE r.codCliente IN (${placeholders})
       AND r.Fecha >= ?
       AND r.Fecha <= ?
-      AND (r.Estado IS NULL OR r.Estado <> 'ANULADO')
+      AND r.Estado = 'ACT'
     ORDER BY r.codCliente, r.Fecha ASC
     `,
     [...codClientes, fechaDesde, fechaHasta]
   );
 
   return rows;
+}
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const limit = Math.max(1, Math.min(50, Number(searchParams.get("limit") || 20)));
+
+    const [rows] = await crmPool.query<CierreListRow[]>(
+      `
+      SELECT
+        c.id_cierre,
+        c.id_campania,
+        c.id_audiencia,
+        c.fecha_desde,
+        c.fecha_hasta,
+        c.fecha_cierre,
+        c.porcentaje_comision,
+        c.total_notificados,
+        c.total_agendados,
+        c.total_no_agendados,
+        c.total_clientes_con_pago,
+        c.total_clientes_comisionables,
+        c.total_pagos_encontrados,
+        c.monto_total_recuperado,
+        c.monto_total_comisionable,
+        c.monto_total_comision,
+        c.estado,
+        c.observacion,
+        c.creado_por,
+        c.fecha_creacion,
+        c.fecha_actualizacion,
+        ca.nombre AS nombre_campania
+      FROM crm_cierres_campania c
+      LEFT JOIN campanias ca
+        ON ca.id_campania = c.id_campania
+      ORDER BY c.id_cierre DESC
+      LIMIT ?
+      `,
+      [limit]
+    );
+
+    return NextResponse.json({
+      ok: true,
+      rows: rows.map((r) => ({
+        idCierre: Number(r.id_cierre),
+        idCampania: Number(r.id_campania),
+        idAudiencia: r.id_audiencia !== null ? Number(r.id_audiencia) : null,
+        nombreCampania: r.nombre_campania,
+        fechaDesde: r.fecha_desde,
+        fechaHasta: r.fecha_hasta,
+        fechaCierre: r.fecha_cierre,
+        porcentajeComision: Number(r.porcentaje_comision || 0),
+        totalNotificados: Number(r.total_notificados || 0),
+        totalAgendados: Number(r.total_agendados || 0),
+        totalNoAgendados: Number(r.total_no_agendados || 0),
+        totalClientesConPago: Number(r.total_clientes_con_pago || 0),
+        totalClientesComisionables: Number(r.total_clientes_comisionables || 0),
+        totalPagosEncontrados: Number(r.total_pagos_encontrados || 0),
+        montoTotalRecuperado: Number(r.monto_total_recuperado || 0),
+        montoTotalComisionable: Number(r.monto_total_comisionable || 0),
+        montoTotalComision: Number(r.monto_total_comision || 0),
+        estado: r.estado,
+        observacion: r.observacion,
+        creadoPor: r.creado_por,
+        fechaCreacion: r.fecha_creacion,
+        fechaActualizacion: r.fecha_actualizacion,
+      })),
+    });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {
@@ -279,20 +384,43 @@ export async function POST(req: Request) {
 
     const fechaDesde = toSqlDate(fechaDesdeBase);
     const fechaHasta = toSqlDate(body.fechaHasta);
-    const fechaHastaDateTime = toSqlDateTimeEndOfDay(body.fechaHasta);
+    const fechaDesdeDateTime = toSqlDateTimeStartOfDay(fechaDesde);
+    const fechaHastaDateTime = toSqlDateTimeEndOfDay(fechaHasta);
+
+    if (new Date(fechaHastaDateTime) < new Date(fechaDesdeDateTime)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "La fechaHasta no puede ser menor que la fecha de inicio.",
+        },
+        { status: 400 }
+      );
+    }
 
     const clientesCampania = await getClientesCampania(idCampania);
+
+    if (!clientesCampania.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "La campaña no tiene clientes notificados para procesar.",
+        },
+        { status: 400 }
+      );
+    }
+
     const codClientes = clientesCampania
       .map((r) => Number(r.cod_cliente))
       .filter((n) => Number.isInteger(n) && n > 0);
 
     const pagosLocales = await getPagosLocales(
       codClientes,
-      `${fechaDesde} 00:00:00`,
+      fechaDesdeDateTime,
       fechaHastaDateTime
     );
 
     const pagosPorCliente = new Map<number, PagoLocalRow[]>();
+
     for (const pago of pagosLocales) {
       const cod = Number(pago.cod_cliente);
       if (!pagosPorCliente.has(cod)) pagosPorCliente.set(cod, []);
@@ -455,6 +583,7 @@ export async function POST(req: Request) {
       }
 
       totalNotificados += 1;
+
       if (tieneAgenda) totalAgendados += 1;
       else totalNoAgendados += 1;
 
