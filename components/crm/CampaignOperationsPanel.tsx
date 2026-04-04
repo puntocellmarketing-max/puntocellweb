@@ -90,6 +90,12 @@ const estadosFiltro = [
   { value: "CANCELED", label: "Cancelado" },
 ];
 
+const agendaOptions = [
+  { value: "TODOS", label: "Todos" },
+  { value: "CON_AGENDA", label: "Con agenda" },
+  { value: "SIN_AGENDA", label: "Sin agenda" },
+];
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
   const d = new Date(value);
@@ -219,6 +225,7 @@ export default function CampaignOperationsPanel({ idCampania }: Props) {
 
   const [items, setItems] = useState<EnvioItem[]>([]);
   const [estadoFiltro, setEstadoFiltro] = useState("");
+  const [agendaFiltro, setAgendaFiltro] = useState("TODOS");
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
@@ -250,6 +257,9 @@ export default function CampaignOperationsPanel({ idCampania }: Props) {
     });
 
     if (estadoFiltro) qs.set("estado", estadoFiltro);
+    if (agendaFiltro && agendaFiltro !== "TODOS") {
+      qs.set("agenda", agendaFiltro);
+    }
 
     const res = await fetch(
       `/api/crm/campanias/${idCampania}/envios?${qs.toString()}`,
@@ -293,7 +303,7 @@ export default function CampaignOperationsPanel({ idCampania }: Props) {
     return () => {
       active = false;
     };
-  }, [idCampania, page, estadoFiltro]);
+  }, [idCampania, page, estadoFiltro, agendaFiltro]);
 
   async function ejecutarLote() {
     try {
@@ -521,7 +531,7 @@ export default function CampaignOperationsPanel({ idCampania }: Props) {
         </div>
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
                 Tamaño de lote
@@ -553,6 +563,26 @@ export default function CampaignOperationsPanel({ idCampania }: Props) {
                 {estadosFiltro.map((estado) => (
                   <option key={estado.value || "ALL"} value={estado.value}>
                     {estado.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Filtrar por agenda
+              </label>
+              <select
+                value={agendaFiltro}
+                onChange={(e) => {
+                  setPage(1);
+                  setAgendaFiltro(e.target.value);
+                }}
+                className="w-full rounded-2xl border border-slate-300 px-4 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+              >
+                {agendaOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </select>

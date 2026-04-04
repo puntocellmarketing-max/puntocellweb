@@ -44,6 +44,76 @@ function buildSeguimiento(row: EnvioRow) {
   return row.estado_agenda;
 }
 
+function buildAgendaSql(agenda: string) {
+  if (agenda === "CON_AGENDA") {
+    return "AND ag.id_agenda IS NOT NULL";
+  }
+
+  if (agenda === "SIN_AGENDA") {
+    return "AND ag.id_agenda IS NULL";
+  }
+
+  return "";
+}
+
+const agendaJoinSql = `
+LEFT JOIN agenda_crm ag
+  ON ag.id_agenda = COALESCE(
+    (
+      SELECT a1.id_agenda
+      FROM agenda_crm a1
+      WHERE a1.id_campania = ew.id_campania
+        AND a1.cod_cliente IS NOT NULL
+        AND ew.cod_cliente IS NOT NULL
+        AND a1.cod_cliente = ew.cod_cliente
+      ORDER BY
+        a1.fecha_recordatorio DESC,
+        a1.fecha_creacion DESC,
+        a1.id_agenda DESC
+      LIMIT 1
+    ),
+    (
+      SELECT a2.id_agenda
+      FROM agenda_crm a2
+      WHERE a2.id_campania = ew.id_campania
+        AND a2.telefono IS NOT NULL
+        AND ew.telefono IS NOT NULL
+        AND a2.telefono COLLATE utf8mb4_unicode_ci =
+            ew.telefono COLLATE utf8mb4_unicode_ci
+      ORDER BY
+        a2.fecha_recordatorio DESC,
+        a2.fecha_creacion DESC,
+        a2.id_agenda DESC
+      LIMIT 1
+    ),
+    (
+      SELECT a3.id_agenda
+      FROM agenda_crm a3
+      WHERE a3.cod_cliente IS NOT NULL
+        AND ew.cod_cliente IS NOT NULL
+        AND a3.cod_cliente = ew.cod_cliente
+      ORDER BY
+        a3.fecha_recordatorio DESC,
+        a3.fecha_creacion DESC,
+        a3.id_agenda DESC
+      LIMIT 1
+    ),
+    (
+      SELECT a4.id_agenda
+      FROM agenda_crm a4
+      WHERE a4.telefono IS NOT NULL
+        AND ew.telefono IS NOT NULL
+        AND a4.telefono COLLATE utf8mb4_unicode_ci =
+            ew.telefono COLLATE utf8mb4_unicode_ci
+      ORDER BY
+        a4.fecha_recordatorio DESC,
+        a4.fecha_creacion DESC,
+        a4.id_agenda DESC
+      LIMIT 1
+    )
+  )
+`;
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -62,6 +132,8 @@ export async function GET(
     const { searchParams } = new URL(req.url);
 
     const estado = (searchParams.get("estado") || "").trim();
+    const agenda = (searchParams.get("agenda") || "TODOS").trim();
+
     const page = safeInt(searchParams.get("page"), 1, 1, 100000);
     const pageSize = safeInt(searchParams.get("pageSize"), 20, 1, 200);
     const offset = (page - 1) * pageSize;
@@ -75,12 +147,15 @@ export async function GET(
     }
 
     const whereSql = `WHERE ${where.join(" AND ")}`;
+    const agendaSql = buildAgendaSql(agenda);
 
     const [countRows] = await crmPool.query<RowDataPacket[]>(
       `
       SELECT COUNT(*) AS total
       FROM envios_whatsapp ew
+      ${agendaJoinSql}
       ${whereSql}
+      ${agendaSql}
       `,
       values
     );
@@ -116,63 +191,10 @@ export async function GET(
       LEFT JOIN crm_clientes_sync cs
         ON cs.cod_cliente = ew.cod_cliente
 
-      LEFT JOIN agenda_crm ag
-        ON ag.id_agenda = COALESCE(
-          (
-            SELECT a1.id_agenda
-            FROM agenda_crm a1
-            WHERE a1.id_campania = ew.id_campania
-              AND a1.cod_cliente IS NOT NULL
-              AND ew.cod_cliente IS NOT NULL
-              AND a1.cod_cliente = ew.cod_cliente
-            ORDER BY
-              a1.fecha_recordatorio DESC,
-              a1.fecha_creacion DESC,
-              a1.id_agenda DESC
-            LIMIT 1
-          ),
-          (
-            SELECT a2.id_agenda
-            FROM agenda_crm a2
-            WHERE a2.id_campania = ew.id_campania
-              AND a2.telefono IS NOT NULL
-              AND ew.telefono IS NOT NULL
-              AND a2.telefono COLLATE utf8mb4_unicode_ci =
-                  ew.telefono COLLATE utf8mb4_unicode_ci
-            ORDER BY
-              a2.fecha_recordatorio DESC,
-              a2.fecha_creacion DESC,
-              a2.id_agenda DESC
-            LIMIT 1
-          ),
-          (
-            SELECT a3.id_agenda
-            FROM agenda_crm a3
-            WHERE a3.cod_cliente IS NOT NULL
-              AND ew.cod_cliente IS NOT NULL
-              AND a3.cod_cliente = ew.cod_cliente
-            ORDER BY
-              a3.fecha_recordatorio DESC,
-              a3.fecha_creacion DESC,
-              a3.id_agenda DESC
-            LIMIT 1
-          ),
-          (
-            SELECT a4.id_agenda
-            FROM agenda_crm a4
-            WHERE a4.telefono IS NOT NULL
-              AND ew.telefono IS NOT NULL
-              AND a4.telefono COLLATE utf8mb4_unicode_ci =
-                  ew.telefono COLLATE utf8mb4_unicode_ci
-            ORDER BY
-              a4.fecha_recordatorio DESC,
-              a4.fecha_creacion DESC,
-              a4.id_agenda DESC
-            LIMIT 1
-          )
-        )
+      ${agendaJoinSql}
 
       ${whereSql}
+      ${agendaSql}
       ORDER BY ew.id_envio DESC
       LIMIT ? OFFSET ?
       `,
