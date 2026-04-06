@@ -1,7 +1,7 @@
-// lib/extractos/getExtractoData.ts
-import { pool } from "@/lib/db";
+import { localPool } from "@/lib/db-sistema";
+import type { RowDataPacket } from "mysql2";
 
-type CuotaRow = {
+type CuotaRow = RowDataPacket & {
   codCliente: number;
   cliente: string;
   CodCobrar?: number | null;
@@ -19,7 +19,7 @@ type CuotaRow = {
   Vendedor: string;
 };
 
-type ArticuloRow = {
+type ArticuloRow = RowDataPacket & {
   codVenta: number;
   codArticulo: number | string;
   articulo: string;
@@ -37,7 +37,12 @@ export async function getExtractoData(codCliente: number) {
     throw new Error("Código de cliente inválido.");
   }
 
-  const [rows] = await pool.query<CuotaRow[]>(
+  const [dbActual] = await localPool.query<RowDataPacket[]>(
+    "SELECT DATABASE() AS db"
+  );
+  console.log("BASE ACTUAL EXTRACTO:", dbActual);
+
+  const [rows] = await localPool.query<CuotaRow[]>(
     `
     SELECT 
         c.codCliente,
@@ -72,10 +77,9 @@ export async function getExtractoData(codCliente: number) {
   }
 
   const codVentas = [...new Set(rows.map((r) => r.codVenta))];
-
   const placeholders = codVentas.map(() => "?").join(",");
 
-  const [artRows] = await pool.query<ArticuloRow[]>(
+  const [artRows] = await localPool.query<ArticuloRow[]>(
     `
     SELECT
       codVenta,
@@ -134,6 +138,7 @@ export async function getExtractoData(codCliente: number) {
       const articulos = (articulosPorVenta[row.codVenta] || []).map((a) => {
         const cantidad = toNumber(a.Cantidad);
         const precio = toNumber(a.PrecioDescuento);
+
         return {
           codArticulo: a.codArticulo,
           articulo: a.articulo,
@@ -184,9 +189,18 @@ export async function getExtractoData(codCliente: number) {
     };
   });
 
-  const totalFacturadoGeneral = facturas.reduce((acc, f) => acc + f.totalFactura, 0);
-  const totalPagadoGeneral = facturas.reduce((acc, f) => acc + f.totalPagado, 0);
-  const totalSaldoGeneral = facturas.reduce((acc, f) => acc + f.saldoReal, 0);
+  const totalFacturadoGeneral = facturas.reduce(
+    (acc, f) => acc + f.totalFactura,
+    0
+  );
+  const totalPagadoGeneral = facturas.reduce(
+    (acc, f) => acc + f.totalPagado,
+    0
+  );
+  const totalSaldoGeneral = facturas.reduce(
+    (acc, f) => acc + f.saldoReal,
+    0
+  );
 
   return {
     cliente: rows[0].cliente,
