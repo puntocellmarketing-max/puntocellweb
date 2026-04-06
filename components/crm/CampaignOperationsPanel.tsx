@@ -716,4 +716,4 @@ export default function CampaignOperationsPanel({ idCampania }: Props) {
       </div>
     </section>
   );
-}
+}   
