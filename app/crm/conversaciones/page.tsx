@@ -301,6 +301,7 @@ export default function CRMConversationsPage() {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [replySaving, setReplySaving] = useState(false);
+  const [sendingExtract, setSendingExtract] = useState(false);
 
   const [search, setSearch] = useState("");
   const [estadoFilter, setEstadoFilter] = useState<string>("TODOS");
@@ -446,6 +447,49 @@ export default function CRMConversationsPage() {
       alert(`Error: ${e?.message || "No se pudo enviar."}`);
     } finally {
       setReplySaving(false);
+    }
+  }
+
+  async function sendExtract() {
+    if (!selectedPhone) {
+      alert("Seleccioná una conversación.");
+      return;
+    }
+
+    if (!selectedCodCliente) {
+      alert("Esta conversación no tiene código de cliente asociado.");
+      return;
+    }
+
+    setSendingExtract(true);
+
+    try {
+      const res = await fetch("/api/whatsapp/send-extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          codCliente: selectedCodCliente,
+          telefono: selectedPhone,
+        }),
+      });
+
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : {};
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "No se pudo enviar el extracto.");
+      }
+
+      alert("Extracto enviado correctamente.");
+
+      await loadChat(selectedPhone);
+      await loadConvs();
+    } catch (e: any) {
+      alert(`Error: ${e?.message || "No se pudo enviar el extracto."}`);
+    } finally {
+      setSendingExtract(false);
     }
   }
 
@@ -745,6 +789,14 @@ export default function CRMConversationsPage() {
                 className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
               >
                 Responder
+              </button>
+
+              <button
+                onClick={sendExtract}
+                disabled={!selectedPhone || !selectedCodCliente || sendingExtract}
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                {sendingExtract ? "Enviando extracto..." : "Enviar extracto"}
               </button>
 
               <button

@@ -1,4 +1,3 @@
-// app/api/whatsapp/send-extract/route.ts
 import { NextResponse } from "next/server";
 import { generateExtractoPdf } from "@/lib/extractos/generateExtractoPdf";
 
@@ -45,35 +44,39 @@ export async function POST(req: Request) {
 
     if (!token || !phoneNumberId) {
       return NextResponse.json(
-        { ok: false, error: "Faltan variables WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID." },
+        {
+          ok: false,
+          error: "Faltan variables WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID.",
+        },
         { status: 500 }
       );
     }
 
-// 1) Generar PDF
-const { pdf, fileName, data } = await generateExtractoPdf(codCliente);
+    // 1) Generar PDF directamente
+    const { pdf, fileName } = await generateExtractoPdf(codCliente);
 
-// 2) Convertir a Buffer
-const pdfBuffer = Buffer.from(pdf);
+    // 2) Subir PDF a Meta
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
 
-// 3) Subir media a Meta
-const form = new FormData();
-form.append("messaging_product", "whatsapp");
+    // Convertimos a Uint8Array para evitar problemas de tipado con Blob/Buffer
+    const uint8 = new Uint8Array(pdf);
+    const blob = new Blob([uint8], { type: "application/pdf" });
 
-const blob = new Blob([pdfBuffer], { type: "application/pdf" });
-form.append("file", blob, fileName);
+    form.append("file", blob, fileName);
 
-const uploadRes = await fetch(
-  `https://graph.facebook.com/v23.0/${phoneNumberId}/media`,
-  {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: form,
-  }
-);
-    const uploadJson = await uploadRes.json();
+    const uploadRes = await fetch(
+      `https://graph.facebook.com/v23.0/${phoneNumberId}/media`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: form,
+      }
+    );
+
+    const uploadJson = await uploadRes.json().catch(() => ({}));
 
     if (!uploadRes.ok || !uploadJson?.id) {
       return NextResponse.json(
@@ -111,7 +114,7 @@ const uploadRes = await fetch(
       }
     );
 
-    const sendJson = await sendRes.json();
+    const sendJson = await sendRes.json().catch(() => ({}));
 
     if (!sendRes.ok) {
       return NextResponse.json(
@@ -126,15 +129,9 @@ const uploadRes = await fetch(
 
     const wamid = sendJson?.messages?.[0]?.id ?? null;
 
-    // Aquí luego se integra guardado en BD:
-    // - conversaciones
-    // - mensajes
-    // - crm_envios / cola si corresponde
-
     return NextResponse.json({
       ok: true,
       codCliente,
-      cliente: data.cliente,
       telefono,
       fileName,
       mediaId,
@@ -144,7 +141,7 @@ const uploadRes = await fetch(
     return NextResponse.json(
       {
         ok: false,
-        error: error?.message ?? "Error interno al enviar extracto.",
+        error: error?.message ?? "Error interno en send-extract.",
       },
       { status: 500 }
     );
