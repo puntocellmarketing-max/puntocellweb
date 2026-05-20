@@ -62,7 +62,9 @@ export async function POST(req: Request) {
 
     const [jobRows] = await conn.query<JobRow[]>(
       `
-      SELECT job_id, filters_json
+      SELECT 
+        job_id, 
+        filters_json
       FROM crm_sync_jobs
       WHERE job_id = ?
       LIMIT 1
@@ -72,6 +74,7 @@ export async function POST(req: Request) {
 
     if (!jobRows.length) {
       await conn.rollback();
+
       return NextResponse.json(
         { ok: false, error: "Job no encontrado." },
         { status: 404 }
@@ -97,17 +100,24 @@ export async function POST(req: Request) {
     );
 
     const stats = statsRows[0];
+
     const totalClientes = Number(stats?.total_clientes ?? 0);
     const totalValidos = Number(stats?.total_validos ?? 0);
     const totalInvalidos = Number(stats?.total_invalidos ?? 0);
 
     if (totalClientes <= 0) {
       await conn.rollback();
+
       return NextResponse.json(
         { ok: false, error: "No hay clientes sincronizados para ese job." },
         { status: 400 }
       );
     }
+
+    const filtrosJson = job.filters_json || JSON.stringify({
+      jobId,
+      source: "crm_clientes_sync",
+    });
 
     const [insertAud] = await conn.execute<ResultSetHeader>(
       `
@@ -127,7 +137,7 @@ export async function POST(req: Request) {
       [
         nombre,
         descripcion,
-        job.filters_json,
+        filtrosJson,
         jobId,
         totalClientes,
         totalValidos,
@@ -161,8 +171,8 @@ export async function POST(req: Request) {
       SELECT
         ? AS id_audiencia,
         x.cod_cliente,
-        x.telefono_normalizado AS telefono,
         x.cliente,
+        x.telefono_normalizado AS telefono,
         x.telefono_valido,
         x.motivo_telefono_invalido,
         x.requiere_revision,
