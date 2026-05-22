@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
 import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
@@ -215,7 +215,7 @@ export async function GET(req: Request) {
         ON ups.cod_cliente = a.cod_cliente
     `;
 
-    const [items] = await pool.query<AgendaRow[]>(
+    const [items] = await crmPool.query<AgendaRow[]>(
       `
       SELECT
         a.id_agenda,
@@ -269,7 +269,7 @@ export async function GET(req: Request) {
       [...paramsBase, pageSize, offset]
     );
 
-    const [countRows] = await pool.query<CountRow[]>(
+    const [countRows] = await crmPool.query<CountRow[]>(
       `
       SELECT COUNT(*) AS total
       ${fromAndJoins}
@@ -278,7 +278,7 @@ export async function GET(req: Request) {
       paramsBase
     );
 
-    const [summaryRows] = await pool.query<SummaryRow[]>(
+    const [summaryRows] = await crmPool.query<SummaryRow[]>(
       `
       SELECT
         COUNT(*) AS total_filtrados,
@@ -317,7 +317,7 @@ export async function GET(req: Request) {
       params
     );
 
-    const [cobradores] = await pool.query<CobradorRow[]>(
+    const [cobradores] = await crmPool.query<CobradorRow[]>(
       `
       SELECT id_cobrador, nombre
       FROM crm_cobradores

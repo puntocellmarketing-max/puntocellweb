@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
@@ -50,15 +50,36 @@ function normalizePhone(v: unknown): string | null {
 
 function safeIntOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
+
   const n = Number(value);
+
   if (!Number.isFinite(n)) return null;
+
   return Math.trunc(n);
 }
 
-function isValidDatetime(value: string | null | undefined) {
-  if (!value) return false;
+function normalizeEnum(value: unknown, fallback = "") {
+  return String(value ?? fallback).trim().toUpperCase();
+}
+
+function normalizeText(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function normalizeDatetimeForMySQL(value: string) {
   const d = new Date(value);
-  return !Number.isNaN(d.getTime());
+
+  if (Number.isNaN(d.getTime())) return null;
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
 export async function POST(req: Request) {
@@ -72,14 +93,16 @@ export async function POST(req: Request) {
     const idCobradorCreador =
       safeIntOrNull(body?.idCobradorCreador) ?? idCobradorAsignado;
 
-    const tipoGestion = String(body?.tipoGestion || "").trim().toUpperCase();
-    const estado = String(body?.estado || "PENDIENTE").trim().toUpperCase();
-    const prioridad = String(body?.prioridad || "").trim().toUpperCase();
+    const tipoGestion = normalizeEnum(body?.tipoGestion);
+    const estado = normalizeEnum(body?.estado, "PENDIENTE");
+    const prioridad = normalizeEnum(body?.prioridad, "MEDIA");
 
-    const fechaRecordatorio = String(body?.fechaRecordatorio || "").trim();
-    const nota = String(body?.nota || "").trim() || null;
-    const resultado = String(body?.resultado || "").trim() || null;
-    const creadoPor = String(body?.creadoPor || "").trim() || null;
+    const fechaRecordatorioRaw = String(body?.fechaRecordatorio || "").trim();
+    const fechaRecordatorio = normalizeDatetimeForMySQL(fechaRecordatorioRaw);
+
+    const nota = normalizeText(body?.nota);
+    const resultado = normalizeText(body?.resultado);
+    const creadoPor = normalizeText(body?.creadoPor);
 
     if (!idCobradorAsignado || !idCobradorCreador) {
       return NextResponse.json(
@@ -109,7 +132,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!isValidDatetime(fechaRecordatorio)) {
+    if (!fechaRecordatorio) {
       return NextResponse.json(
         { ok: false, error: "fechaRecordatorio inválida." },
         { status: 400 }
@@ -123,7 +146,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const [cobradores] = await pool.query<CobradorActivoRow[]>(
+    const [cobradores] = await crmPool.query<CobradorActivoRow[]>(
       `
       SELECT id_cobrador
       FROM crm_cobradores
@@ -135,14 +158,20 @@ export async function POST(req: Request) {
 
     const idsActivos = new Set(cobradores.map((r) => Number(r.id_cobrador)));
 
-    if (!idsActivos.has(idCobradorAsignado) || !idsActivos.has(idCobradorCreador)) {
+    if (
+      !idsActivos.has(idCobradorAsignado) ||
+      !idsActivos.has(idCobradorCreador)
+    ) {
       return NextResponse.json(
-        { ok: false, error: "Uno o ambos cobradores no existen o están inactivos." },
+        {
+          ok: false,
+          error: "Uno o ambos cobradores no existen o están inactivos.",
+        },
         { status: 400 }
       );
     }
 
-    const [insertResult] = await pool.execute<ResultSetHeader>(
+    const [insertResult] = await crmPool.execute<ResultSetHeader>(
       `
       INSERT INTO agenda_crm (
         cod_cliente,
@@ -180,6 +209,7 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("Error /api/crm/agendar:", e);
+
     return NextResponse.json(
       { ok: false, error: e?.message || "No se pudo guardar la agenda." },
       { status: 500 }

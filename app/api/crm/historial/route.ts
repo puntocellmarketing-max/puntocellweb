@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
 import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
@@ -88,7 +88,7 @@ export async function GET(req: Request) {
       LIMIT ${limit}
     `;
 
-    const [rows] = await pool.query<HistorialRow[]>(sql, [telefono, telefono]);
+    const [rows] = await crmPool.query<HistorialRow[]>(sql, [telefono, telefono]);
 
     return NextResponse.json({ ok: true, rows });
   } catch (e: any) {
