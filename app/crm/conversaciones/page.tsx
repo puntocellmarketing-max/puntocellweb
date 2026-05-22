@@ -12,6 +12,22 @@ type Conversation = {
   ultimoAt: string | null;
   unreadCount: number;
   estado: string;
+
+  saldo?: number | null;
+  diasAtraso?: number | null;
+  ultimoPago?: string | null;
+  categoria?: string | null;
+  zona?: string | null;
+
+  agendado?: boolean;
+  idAgenda?: number | null;
+  estadoAgenda?: string | null;
+  tipoGestion?: string | null;
+  prioridadAgenda?: string | null;
+  fechaRecordatorio?: string | null;
+  notaAgenda?: string | null;
+  resultadoAgenda?: string | null;
+  seguimiento?: string | null;
 };
 
 type ChatMsg = {
@@ -39,11 +55,32 @@ const ESTADOS_GESTION = [
   "ERRONEO",
 ] as const;
 
+const AGENDA_FILTERS = [
+  { value: "TODOS", label: "Todos" },
+  { value: "SIN_AGENDA", label: "Sin agenda" },
+  { value: "CON_AGENDA", label: "Con agenda" },
+  { value: "PENDIENTE", label: "Pendiente" },
+  { value: "PROMESA", label: "Promesa" },
+  { value: "VENCIDO", label: "Vencido" },
+] as const;
+
 const QUICK_REPLIES = [
-  "Buen día, le escribimos para darle seguimiento a su cuenta pendiente. ¿Podría indicarnos cuándo estaría realizando el pago?",
-  "Gracias por responder. ¿Podemos agendar su compromiso de pago para una fecha específica?",
-  "Perfecto, quedamos atentos a su comprobante de pago. Muchas gracias.",
-  "Le compartimos nuevamente su extracto para que pueda verificar el saldo pendiente.",
+  {
+    label: "Recordatorio amable",
+    text: "Buen día, le escribimos para darle seguimiento a su cuenta pendiente. ¿Podría indicarnos cuándo estaría realizando el pago?",
+  },
+  {
+    label: "Agendar promesa",
+    text: "Gracias por responder. ¿Podemos agendar su compromiso de pago para una fecha específica?",
+  },
+  {
+    label: "Pedir comprobante",
+    text: "Perfecto, quedamos atentos a su comprobante de pago. Muchas gracias.",
+  },
+  {
+    label: "Enviar extracto",
+    text: "Le compartimos nuevamente su extracto para que pueda verificar el saldo pendiente.",
+  },
 ];
 
 function formatDate(value?: string | null) {
@@ -76,6 +113,14 @@ function formatTimeOnly(value?: string | null) {
   });
 }
 
+function formatGs(value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "—";
+  }
+
+  return `${Math.round(Number(value)).toLocaleString("es-PY")} Gs.`;
+}
+
 function estadoGestionLabel(value?: string | null) {
   switch (value) {
     case "NUEVO":
@@ -103,6 +148,54 @@ function tipoMensajeLabel(value?: string | null) {
       return "Saliente";
     default:
       return "Sin movimiento";
+  }
+}
+
+function tipoGestionLabel(value?: string | null) {
+  switch (value) {
+    case "RECORDATORIO":
+      return "Recordatorio";
+    case "LLAMAR":
+      return "Llamar";
+    case "WHATSAPP":
+      return "WhatsApp";
+    case "VISITA":
+      return "Visita";
+    case "PROMESA_PAGO":
+      return "Promesa de pago";
+    case "SEGUIMIENTO":
+      return "Seguimiento";
+    default:
+      return value || "—";
+  }
+}
+
+function seguimientoLabel(value?: string | null) {
+  switch (value) {
+    case "SIN_AGENDA":
+      return "Sin agenda";
+    case "AGENDADO":
+      return "Agendado";
+    case "PENDIENTE":
+      return "Pendiente";
+    case "PROMESA":
+      return "Promesa";
+    case "VENCIDO":
+      return "Vencido";
+    case "REALIZADO":
+      return "Realizado";
+    case "REAGENDADO":
+      return "Reagendado";
+    case "PAGADO":
+      return "Pagado";
+    case "NO_RESPONDE":
+      return "No responde";
+    case "ERRONEO":
+      return "Erróneo";
+    case "CANCELADO":
+      return "Cancelado";
+    default:
+      return value || "Sin agenda";
   }
 }
 
@@ -141,6 +234,35 @@ function estadoBadgeClasses(estado?: string | null) {
       return "border-slate-200 bg-slate-100 text-slate-700";
     case "ERRONEO":
       return "border-red-200 bg-red-50 text-red-700";
+    default:
+      return "border-slate-200 bg-slate-100 text-slate-700";
+  }
+}
+
+function seguimientoBadgeClasses(value?: string | null) {
+  switch (value) {
+    case "SIN_AGENDA":
+      return "border-slate-200 bg-slate-100 text-slate-700";
+    case "AGENDADO":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "PENDIENTE":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "PROMESA":
+      return "border-violet-200 bg-violet-50 text-violet-700";
+    case "VENCIDO":
+      return "border-red-200 bg-red-50 text-red-700";
+    case "REALIZADO":
+      return "border-indigo-200 bg-indigo-50 text-indigo-700";
+    case "REAGENDADO":
+      return "border-yellow-200 bg-yellow-50 text-yellow-700";
+    case "PAGADO":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "NO_RESPONDE":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    case "ERRONEO":
+      return "border-red-200 bg-red-50 text-red-700";
+    case "CANCELADO":
+      return "border-slate-300 bg-slate-200 text-slate-700";
     default:
       return "border-slate-200 bg-slate-100 text-slate-700";
   }
@@ -259,6 +381,21 @@ function EmptyState({
         <h3 className="mt-4 text-base font-semibold text-slate-950">{title}</h3>
         <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
       </div>
+    </div>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+}) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span>{label}</span>
+      <span className="text-right font-medium text-slate-950">{value || "—"}</span>
     </div>
   );
 }
@@ -399,6 +536,7 @@ export default function CRMConversationsPage() {
 
   const [search, setSearch] = useState("");
   const [estadoFilter, setEstadoFilter] = useState<string>("TODOS");
+  const [agendaFilter, setAgendaFilter] = useState<string>("TODOS");
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -413,9 +551,9 @@ export default function CRMConversationsPage() {
       total: convs.length,
       noLeidas: convs.filter((c) => Number(c.unreadCount || 0) > 0).length,
       entrantes: convs.filter((c) => c.ultimoTipo === "IN").length,
-      enGestion: convs.filter((c) => c.estado === "EN_GESTION").length,
-      promesas: convs.filter((c) => c.estado === "PROMESA").length,
-      pagados: convs.filter((c) => c.estado === "PAGADO").length,
+      sinAgenda: convs.filter((c) => c.seguimiento === "SIN_AGENDA").length,
+      promesas: convs.filter((c) => c.seguimiento === "PROMESA").length,
+      vencidos: convs.filter((c) => c.seguimiento === "VENCIDO").length,
     };
   }, [convs]);
 
@@ -443,10 +581,16 @@ export default function CRMConversationsPage() {
       const params = new URLSearchParams();
       params.set("limit", "150");
 
-      if (search.trim()) params.set("q", search.trim());
+      if (search.trim()) {
+        params.set("q", search.trim());
+      }
 
       if (estadoFilter && estadoFilter !== "TODOS") {
         params.set("estado", estadoFilter);
+      }
+
+      if (agendaFilter && agendaFilter !== "TODOS") {
+        params.set("agenda", agendaFilter);
       }
 
       if (onlyUnread) {
@@ -457,17 +601,27 @@ export default function CRMConversationsPage() {
         cache: "no-store",
       });
 
-      const data = await res.json();
+      const text = await res.text();
 
-      if (!data?.ok) {
+      let data: any = {};
+
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error("La API respondió un formato inválido.");
+      }
+
+      if (!res.ok || !data?.ok) {
         throw new Error(data?.error || "No se pudo cargar conversaciones.");
       }
 
       const rows = Array.isArray(data.rows) ? (data.rows as Conversation[]) : [];
+
       setConvs(rows);
 
       if (selectedPhone) {
         const current = rows.find((r) => r.telefono === selectedPhone);
+
         if (current) {
           setSelectedCodCliente(current.codCliente ?? null);
           setSelectedCliente(current.cliente ?? null);
@@ -477,11 +631,21 @@ export default function CRMConversationsPage() {
 
       setConvStatus("");
     } catch (e: any) {
-      setConvStatus(e?.message || "Error cargando conversaciones.");
+      console.error("Error cargando conversaciones:", e);
+
+      setConvs((currentRows) => {
+        if (currentRows.length > 0) {
+          setConvStatus("");
+          return currentRows;
+        }
+
+        setConvStatus(e?.message || "Error cargando conversaciones.");
+        return currentRows;
+      });
     } finally {
       setRefreshing(false);
     }
-  }, [search, estadoFilter, onlyUnread, selectedPhone]);
+  }, [search, estadoFilter, agendaFilter, onlyUnread, selectedPhone]);
 
   const loadChat = useCallback(async (telefono: string) => {
     try {
@@ -691,14 +855,14 @@ export default function CRMConversationsPage() {
           <StatCard label="Total" value={stats.total} helper="Cargadas" />
           <StatCard label="No leídas" value={stats.noLeidas} tone="blue" />
           <StatCard label="Entrantes" value={stats.entrantes} tone="amber" />
-          <StatCard label="En gestión" value={stats.enGestion} tone="amber" />
+          <StatCard label="Sin agenda" value={stats.sinAgenda} />
           <StatCard label="Promesas" value={stats.promesas} tone="violet" />
-          <StatCard label="Pagados" value={stats.pagados} tone="emerald" />
+          <StatCard label="Vencidos" value={stats.vencidos} tone="red" />
         </div>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_240px_190px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_220px_220px_190px]">
           <div className="grid gap-1.5 text-sm">
             <label htmlFor="searchInbox" className="font-medium text-slate-700">
               Buscar conversación
@@ -731,6 +895,24 @@ export default function CRMConversationsPage() {
             </select>
           </div>
 
+          <div className="grid gap-1.5 text-sm">
+            <label htmlFor="agendaFilter" className="font-medium text-slate-700">
+              Agenda
+            </label>
+            <select
+              id="agendaFilter"
+              value={agendaFilter}
+              onChange={(e) => setAgendaFilter(e.target.value)}
+              className="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+            >
+              {AGENDA_FILTERS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex items-end">
             <label className="inline-flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
               <input
@@ -746,12 +928,12 @@ export default function CRMConversationsPage() {
       </section>
 
       {convStatus ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
-          {convStatus}
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-sm">
+          No se pudo actualizar el inbox en este momento. Probá recargar nuevamente.
         </div>
       ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[370px_minmax(0,1fr)_340px]">
+      <section className="grid gap-5 xl:grid-cols-[370px_minmax(0,1fr)_360px]">
         <aside className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 p-5">
             <div className="flex items-center justify-between gap-3">
@@ -854,6 +1036,16 @@ export default function CRMConversationsPage() {
                       </span>
 
                       <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                          active
+                            ? "border-white/15 bg-white/10 text-white"
+                            : seguimientoBadgeClasses(c.seguimiento)
+                        }`}
+                      >
+                        {seguimientoLabel(c.seguimiento)}
+                      </span>
+
+                      <span
                         className={`ml-auto text-[11px] ${
                           active ? "text-slate-300" : "text-slate-500"
                         }`}
@@ -885,6 +1077,14 @@ export default function CRMConversationsPage() {
                         )}`}
                       >
                         {estadoGestionLabel(selectedConversation.estado)}
+                      </span>
+
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${seguimientoBadgeClasses(
+                          selectedConversation.seguimiento
+                        )}`}
+                      >
+                        {seguimientoLabel(selectedConversation.seguimiento)}
                       </span>
                     </div>
 
@@ -999,14 +1199,15 @@ export default function CRMConversationsPage() {
 
               <div className="border-t border-slate-200 p-5">
                 <div className="mb-3 flex flex-wrap gap-2">
-                  {QUICK_REPLIES.map((item, idx) => (
+                  {QUICK_REPLIES.map((item) => (
                     <button
-                      key={idx}
+                      key={item.label}
                       type="button"
-                      onClick={() => applyQuickReply(item)}
+                      onClick={() => applyQuickReply(item.text)}
+                      title={item.text}
                       className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
                     >
-                      Respuesta rápida {idx + 1}
+                      {item.label}
                     </button>
                   ))}
                 </div>
@@ -1074,34 +1275,90 @@ export default function CRMConversationsPage() {
                 </div>
 
                 <div className="mt-2 space-y-2 text-sm text-slate-600">
-                  <div className="flex justify-between gap-3">
-                    <span>Código</span>
-                    <span className="font-medium text-slate-950">
-                      {selectedCodCliente || "—"}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between gap-3">
-                    <span>Teléfono</span>
-                    <span className="font-medium text-slate-950">
-                      {selectedPhone}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between gap-3">
-                    <span>Último movimiento</span>
-                    <span className="font-medium text-slate-950">
-                      {formatDateShort(selectedConversation.ultimoAt)}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between gap-3">
-                    <span>Tipo</span>
-                    <span className="font-medium text-slate-950">
-                      {tipoMensajeLabel(selectedConversation.ultimoTipo)}
-                    </span>
-                  </div>
+                  <InfoRow label="Código" value={selectedCodCliente} />
+                  <InfoRow label="Teléfono" value={selectedPhone} />
+                  <InfoRow
+                    label="Último movimiento"
+                    value={formatDateShort(selectedConversation.ultimoAt)}
+                  />
+                  <InfoRow
+                    label="Tipo"
+                    value={tipoMensajeLabel(selectedConversation.ultimoTipo)}
+                  />
                 </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Cobranza
+                </div>
+
+                <div className="mt-3 space-y-2 text-sm text-slate-600">
+                  <InfoRow label="Saldo" value={formatGs(selectedConversation.saldo)} />
+                  <InfoRow
+                    label="Días atraso"
+                    value={
+                      selectedConversation.diasAtraso !== null &&
+                      selectedConversation.diasAtraso !== undefined
+                        ? `${selectedConversation.diasAtraso} día(s)`
+                        : "—"
+                    }
+                  />
+                  <InfoRow
+                    label="Último pago"
+                    value={formatDateShort(selectedConversation.ultimoPago)}
+                  />
+                  <InfoRow label="Zona" value={selectedConversation.zona} />
+                  <InfoRow label="Categoría" value={selectedConversation.categoria} />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Agenda
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span
+                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${seguimientoBadgeClasses(
+                      selectedConversation.seguimiento
+                    )}`}
+                  >
+                    {seguimientoLabel(selectedConversation.seguimiento)}
+                  </span>
+
+                  {selectedConversation.prioridadAgenda ? (
+                    <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                      Prioridad {selectedConversation.prioridadAgenda}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 space-y-2 text-sm text-slate-600">
+                  <InfoRow
+                    label="Estado"
+                    value={selectedConversation.estadoAgenda || "Sin agenda"}
+                  />
+                  <InfoRow
+                    label="Tipo gestión"
+                    value={tipoGestionLabel(selectedConversation.tipoGestion)}
+                  />
+                  <InfoRow
+                    label="Recordatorio"
+                    value={formatDate(selectedConversation.fechaRecordatorio)}
+                  />
+                </div>
+
+                {selectedConversation.notaAgenda ? (
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Nota
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      {selectedConversation.notaAgenda}
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-3xl border border-slate-200 bg-white p-4">
@@ -1174,17 +1431,6 @@ export default function CRMConversationsPage() {
                     Copiar teléfono
                   </button>
                 </div>
-              </div>
-
-              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4">
-                <div className="text-sm font-semibold text-amber-800">
-                  Próxima mejora
-                </div>
-                <p className="mt-2 text-sm leading-6 text-amber-700">
-                  En el siguiente paso podemos conectar este panel con agenda para
-                  mostrar “Sin agenda”, “Promesa vencida”, “Próximo recordatorio”
-                  y “Cobrador asignado”.
-                </p>
               </div>
             </div>
           ) : (
