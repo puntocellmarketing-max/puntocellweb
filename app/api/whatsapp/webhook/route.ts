@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "@/lib/db";
-import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import { crmPool } from "@/lib/db-crm";
+import type {
+  PoolConnection,
+  ResultSetHeader,
+  RowDataPacket,
+} from "mysql2/promise";
 
 export const runtime = "nodejs";
 
-type ConversationRow = RowDataPacket & {
-  telefono: string;
+type CodClienteResolution = {
+  codCliente: number | null;
+  actualizarAsociacion: boolean;
 };
 
 function normalizePhone(phone: string | null | undefined): string | null {
   if (!phone) return null;
+
   const cleaned = String(phone).replace(/[^\d]/g, "");
   return cleaned || null;
 }
@@ -19,7 +25,7 @@ async function insertEvento(
   tipoEvento: string,
   payload: unknown,
   idMensajeWhatsapp?: string | null,
-  telefono?: string | null
+  telefono?: string | null,
 ) {
   await conn.execute(
     `
@@ -36,7 +42,7 @@ async function insertEvento(
       idMensajeWhatsapp ?? null,
       telefono ?? null,
       JSON.stringify(payload),
-    ]
+    ],
   );
 }
 
@@ -44,6 +50,7 @@ async function upsertConversation(params: {
   conn: PoolConnection;
   telefono: string;
   codCliente?: number | null;
+  actualizarCodCliente?: boolean;
   ultimoMensaje: string | null;
   ultimoTipo: "IN" | "OUT";
   ultimoAt?: string | null;
@@ -53,6 +60,7 @@ async function upsertConversation(params: {
     conn,
     telefono,
     codCliente = null,
+    actualizarCodCliente = false,
     ultimoMensaje,
     ultimoTipo,
     ultimoAt = null,
@@ -74,7 +82,10 @@ async function upsertConversation(params: {
       ?, ?, ?, ?, COALESCE(?, NOW()), ?, 'NUEVO', NOW()
     )
     ON DUPLICATE KEY UPDATE
-      cod_cliente = COALESCE(VALUES(cod_cliente), cod_cliente),
+      cod_cliente = CASE
+        WHEN ? = 1 THEN VALUES(cod_cliente)
+        ELSE cod_cliente
+      END,
       ultimo_mensaje = VALUES(ultimo_mensaje),
       ultimo_tipo = VALUES(ultimo_tipo),
       ultimo_at = COALESCE(VALUES(ultimo_at), NOW()),
@@ -91,18 +102,23 @@ async function upsertConversation(params: {
       ultimoTipo,
       ultimoAt,
       incrementarUnread ? 1 : 0,
+      actualizarCodCliente ? 1 : 0,
       incrementarUnread ? 1 : 0,
-    ]
+    ],
   );
 }
 
 async function handleMessageStatus(
   conn: PoolConnection,
   statusItem: any,
-  rawPayload: unknown
+  rawPayload: unknown,
 ) {
   const idMensajeWhatsapp = String(statusItem?.id || "").trim();
-  const estadoMeta = String(statusItem?.status || "").trim().toLowerCase();
+
+  const estadoMeta = String(statusItem?.status || "")
+    .trim()
+    .toLowerCase();
+
   const recipientId = normalizePhone(statusItem?.recipient_id);
 
   if (!idMensajeWhatsapp) return;
@@ -124,10 +140,12 @@ async function handleMessageStatus(
     dateFieldSql = "fecha_fallo = NOW(),";
 
     const firstError = statusItem?.errors?.[0];
+
     if (firstError) {
       const code = firstError?.code ? `(${firstError.code}) ` : "";
       const title = firstError?.title ? `${firstError.title} - ` : "";
       const message = firstError?.message || "Error desconocido";
+
       errorMensaje = `${code}${title}${message}`.trim();
     }
   }
@@ -137,7 +155,7 @@ async function handleMessageStatus(
     `status_${estadoMeta || "unknown"}`,
     rawPayload,
     idMensajeWhatsapp,
-    recipientId
+    recipientId,
   );
 
   if (!newEstado) return;
@@ -154,7 +172,7 @@ async function handleMessageStatus(
       END
     WHERE id_mensaje_whatsapp = ?
     `,
-    [newEstado, errorMensaje, errorMensaje, idMensajeWhatsapp]
+    [newEstado, errorMensaje, errorMensaje, idMensajeWhatsapp],
   );
 
   if (recipientId) {
@@ -165,20 +183,24 @@ async function handleMessageStatus(
         estadoMeta === "read"
           ? "Mensaje leído por el cliente."
           : estadoMeta === "delivered"
-          ? "Mensaje entregado al cliente."
-          : estadoMeta === "failed"
-          ? "Error en entrega del mensaje."
-          : "Mensaje saliente actualizado.",
+            ? "Mensaje entregado al cliente."
+            : estadoMeta === "failed"
+              ? "Error en entrega del mensaje."
+              : "Mensaje saliente actualizado.",
       ultimoTipo: "OUT",
       incrementarUnread: false,
+
+      // Los estados enviados por Meta no contienen el código del cliente.
+      // Por eso no deben cambiar una asociación existente.
+      actualizarCodCliente: false,
     });
   }
 }
 
-async function findCodClienteByPhone(
+async function resolveCodClienteByPhone(
   conn: PoolConnection,
-  telefono: string
-): Promise<number | null> {
+  telefono: string,
+): Promise<CodClienteResolution> {
   const [rows] = await conn.query<RowDataPacket[]>(
     `
     SELECT cod_cliente
@@ -186,34 +208,94 @@ async function findCodClienteByPhone(
     WHERE telefono = ?
     LIMIT 1
     `,
-    [telefono]
+    [telefono],
   );
 
-  if (rows.length && rows[0].cod_cliente) {
-    return Number(rows[0].cod_cliente);
+  const codigoActual =
+    rows.length && Number(rows[0].cod_cliente) > 0
+      ? Number(rows[0].cod_cliente)
+      : null;
+
+  /*
+   * Si la conversación ya tiene código, solo se conserva cuando
+   * realmente corresponde al mismo teléfono en crm_clientes_sync.
+   */
+  if (codigoActual) {
+    const [exactRows] = await conn.query<RowDataPacket[]>(
+      `
+      SELECT cod_cliente
+      FROM crm_clientes_sync
+      WHERE telefono_normalizado = ?
+        AND cod_cliente = ?
+      LIMIT 1
+      `,
+      [telefono, codigoActual],
+    );
+
+    if (exactRows.length) {
+      return {
+        codCliente: codigoActual,
+        actualizarAsociacion: false,
+      };
+    }
   }
 
+  /*
+   * Busca hasta dos códigos distintos:
+   *
+   * 0 resultados: todavía no existe información sincronizada.
+   * 1 resultado: teléfono perteneciente a un único cliente.
+   * 2 resultados: teléfono compartido por varios clientes.
+   */
   const [syncRows] = await conn.query<RowDataPacket[]>(
     `
-    SELECT cod_cliente
+    SELECT DISTINCT cod_cliente
     FROM crm_clientes_sync
     WHERE telefono_normalizado = ?
-    LIMIT 1
+      AND cod_cliente IS NOT NULL
+    ORDER BY cod_cliente
+    LIMIT 2
     `,
-    [telefono]
+    [telefono],
   );
 
-  if (syncRows.length && syncRows[0].cod_cliente) {
-    return Number(syncRows[0].cod_cliente);
+  /*
+   * Teléfono único:
+   * asigna o corrige automáticamente el código.
+   */
+  if (syncRows.length === 1 && Number(syncRows[0].cod_cliente) > 0) {
+    return {
+      codCliente: Number(syncRows[0].cod_cliente),
+      actualizarAsociacion: true,
+    };
   }
 
-  return null;
+  /*
+   * Teléfono compartido sin asociación válida:
+   * no selecciona un cliente arbitrariamente.
+   * Deja el código en NULL para obligar a una selección posterior.
+   */
+  if (syncRows.length > 1) {
+    return {
+      codCliente: null,
+      actualizarAsociacion: true,
+    };
+  }
+
+  /*
+   * Si todavía no hay datos sincronizados, conserva la asociación
+   * existente porque no existe evidencia suficiente para eliminarla.
+   */
+  return {
+    codCliente: codigoActual,
+    actualizarAsociacion: false,
+  };
 }
 
 async function handleIncomingMessage(
   conn: PoolConnection,
   msg: any,
-  rawPayload: unknown
+  rawPayload: unknown,
 ) {
   const from = normalizePhone(msg?.from);
   if (!from) return;
@@ -221,7 +303,8 @@ async function handleIncomingMessage(
   const wamid = msg?.id ? String(msg.id) : null;
   const tipo = String(msg?.type || "unknown").toLowerCase();
 
-  const codCliente = await findCodClienteByPhone(conn, from);
+  const resolution = await resolveCodClienteByPhone(conn, from);
+  const codCliente = resolution.codCliente;
 
   let contenido: string | null = null;
   let idOpcion: string | null = null;
@@ -244,9 +327,11 @@ async function handleIncomingMessage(
       contenido = msg?.interactive?.button_reply?.title
         ? String(msg.interactive.button_reply.title)
         : "[Respuesta botón]";
+
       idOpcion = msg?.interactive?.button_reply?.id
         ? String(msg.interactive.button_reply.id)
         : null;
+
       tituloOpcion = msg?.interactive?.button_reply?.title
         ? String(msg.interactive.button_reply.title)
         : null;
@@ -254,9 +339,11 @@ async function handleIncomingMessage(
       contenido = msg?.interactive?.list_reply?.title
         ? String(msg.interactive.list_reply.title)
         : "[Respuesta lista]";
+
       idOpcion = msg?.interactive?.list_reply?.id
         ? String(msg.interactive.list_reply.id)
         : null;
+
       tituloOpcion = msg?.interactive?.list_reply?.title
         ? String(msg.interactive.list_reply.title)
         : null;
@@ -272,6 +359,7 @@ async function handleIncomingMessage(
     contenido = msg?.image?.caption
       ? String(msg.image.caption)
       : "[Imagen recibida]";
+
     mediaId = msg?.image?.id ? String(msg.image.id) : null;
     mimeType = msg?.image?.mime_type ? String(msg.image.mime_type) : null;
     mediaSha256 = msg?.image?.sha256 ? String(msg.image.sha256) : null;
@@ -279,6 +367,7 @@ async function handleIncomingMessage(
     contenido = msg?.video?.caption
       ? String(msg.video.caption)
       : "[Video recibido]";
+
     mediaId = msg?.video?.id ? String(msg.video.id) : null;
     mimeType = msg?.video?.mime_type ? String(msg.video.mime_type) : null;
     mediaSha256 = msg?.video?.sha256 ? String(msg.video.sha256) : null;
@@ -286,6 +375,7 @@ async function handleIncomingMessage(
     contenido = msg?.document?.filename
       ? `[Documento recibido] ${String(msg.document.filename)}`
       : "[Documento recibido]";
+
     mediaId = msg?.document?.id ? String(msg.document.id) : null;
     mimeType = msg?.document?.mime_type ? String(msg.document.mime_type) : null;
     mediaSha256 = msg?.document?.sha256 ? String(msg.document.sha256) : null;
@@ -310,7 +400,7 @@ async function handleIncomingMessage(
         fecha_recibido
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
-        cod_cliente = COALESCE(VALUES(cod_cliente), cod_cliente),
+        cod_cliente = VALUES(cod_cliente),
         telefono = VALUES(telefono),
         contenido = VALUES(contenido),
         tipo = VALUES(tipo),
@@ -331,7 +421,7 @@ async function handleIncomingMessage(
         mediaId,
         mimeType,
         mediaSha256,
-      ]
+      ],
     );
 
     const insertedNewRow = result.affectedRows === 1;
@@ -342,6 +432,7 @@ async function handleIncomingMessage(
       conn,
       telefono: from,
       codCliente,
+      actualizarCodCliente: resolution.actualizarAsociacion,
       ultimoMensaje: contenido,
       ultimoTipo: "IN",
       incrementarUnread: insertedNewRow,
@@ -376,7 +467,7 @@ async function handleIncomingMessage(
       mediaId,
       mimeType,
       mediaSha256,
-    ]
+    ],
   );
 
   await insertEvento(conn, "incoming_message", rawPayload, null, from);
@@ -385,6 +476,7 @@ async function handleIncomingMessage(
     conn,
     telefono: from,
     codCliente,
+    actualizarCodCliente: resolution.actualizarAsociacion,
     ultimoMensaje: contenido,
     ultimoTipo: "IN",
     incrementarUnread: true,
@@ -395,7 +487,7 @@ async function processWebhookPayload(payload: any) {
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
   if (!entries.length) return;
 
-  const conn = await pool.getConnection();
+  const conn = await crmPool.getConnection();
 
   try {
     await conn.beginTransaction();
@@ -407,11 +499,13 @@ async function processWebhookPayload(payload: any) {
         const value = change?.value ?? {};
 
         const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
+
         for (const statusItem of statuses) {
           await handleMessageStatus(conn, statusItem, payload);
         }
 
         const messages = Array.isArray(value?.messages) ? value.messages : [];
+
         for (const msg of messages) {
           await handleIncomingMessage(conn, msg, payload);
         }
@@ -423,6 +517,7 @@ async function processWebhookPayload(payload: any) {
     try {
       await conn.rollback();
     } catch {}
+
     throw error;
   } finally {
     conn.release();
@@ -440,13 +535,20 @@ export async function GET(req: NextRequest) {
   if (mode === "subscribe" && token === verifyToken) {
     return new NextResponse(challenge || "", {
       status: 200,
-      headers: { "Content-Type": "text/plain" },
+      headers: {
+        "Content-Type": "text/plain",
+      },
     });
   }
 
   return NextResponse.json(
-    { ok: false, error: "Verificación inválida." },
-    { status: 403 }
+    {
+      ok: false,
+      error: "Verificación inválida.",
+    },
+    {
+      status: 403,
+    },
   );
 }
 
@@ -456,12 +558,20 @@ export async function POST(req: NextRequest) {
 
     await processWebhookPayload(payload);
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+    });
   } catch (error: any) {
     console.error("Webhook WhatsApp error:", error);
+
     return NextResponse.json(
-      { ok: false, error: error?.message || "Error procesando webhook." },
-      { status: 500 }
+      {
+        ok: false,
+        error: error?.message || "Error procesando webhook.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { crmPool } from "@/lib/db-crm";
 import type { RowDataPacket } from "mysql2/promise";
 
 export const runtime = "nodejs";
@@ -15,7 +15,7 @@ type CobradorRow = RowDataPacket & {
 
 export async function GET() {
   try {
-    const [rows] = await pool.query<CobradorRow[]>(
+    const [rows] = await crmPool.query<CobradorRow[]>(
       `
       SELECT
         id_cobrador,
@@ -44,8 +44,12 @@ export async function GET() {
     });
   } catch (e: any) {
     console.error("Error /api/crm/cobradores:", e);
+
     return NextResponse.json(
-      { ok: false, error: e?.message || "No se pudieron cargar los cobradores." },
+      {
+        ok: false,
+        error: e?.message || "No se pudieron cargar los cobradores.",
+      },
       { status: 500 }
     );
   }
