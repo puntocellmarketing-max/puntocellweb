@@ -3,22 +3,8 @@ import CategoryGrid from "./components/CategoryGrid";
 import HeroRetail from "./components/HeroRetail";
 import ProductRow from "./components/ProductRow";
 import PromoStrip from "./components/PromoStrip";
-import { featuredProducts, homeProducts, phoneProducts } from "./data/storefront";
+import { featuredProducts as demoProducts, homeProducts, phoneProducts } from "./data/storefront";
+import { getHomeCatalog } from "@/lib/ecommerce";
 
-export default function Home() {
-  return (
-    <div className="bg-[#f6f7fb]">
-      <main className="mx-auto max-w-7xl px-4 py-5 sm:py-7 lg:px-6">
-        <HeroRetail />
-        <div className="relative z-10 -mt-1 sm:-mt-5 sm:px-5"><PromoStrip /></div>
-        <div id="categorias" className="scroll-mt-52 pt-14"><CategoryGrid /></div>
-        <div id="productos" className="scroll-mt-52 pt-14">
-          <div id="ofertas" className="scroll-mt-52"><ProductRow eyebrow="Selección PuntoCell" title="Productos destacados" products={featuredProducts} /></div>
-        </div>
-        <div className="pt-10"><BannerCarousel /></div>
-        <div id="celulares" className="scroll-mt-52 pt-14"><ProductRow eyebrow="Conectate" title="Celulares y accesorios" products={phoneProducts} /></div>
-        <div id="electrodomesticos" className="scroll-mt-52 pt-14"><ProductRow eyebrow="Equipá tu casa" title="Tecnología para el hogar" products={homeProducts} /></div>
-      </main>
-    </div>
-  );
-}
+export const dynamic="force-dynamic";
+export default async function Home(){const catalog=await getHomeCatalog();const featured=catalog.featured.length?catalog.featured:demoProducts;const offers=catalog.offers.length?catalog.offers:[];const seasonal=catalog.seasonal.length?catalog.seasonal:[];return <div className="bg-[#f6f7fb]"><main className="mx-auto max-w-7xl px-4 py-5 sm:py-7 lg:px-6"><HeroRetail banner={catalog.banners[0]}/><div className="relative z-10 -mt-1 sm:-mt-5 sm:px-5"><PromoStrip/></div><div id="categorias" className="scroll-mt-52 pt-14"><CategoryGrid items={catalog.categories}/></div><div id="productos" className="scroll-mt-52 pt-14"><div id="ofertas" className="scroll-mt-52"><ProductRow eyebrow={offers.length?"Precios especiales":"Selección PuntoCell"} title={offers.length?"Ofertas":"Productos destacados"} products={offers.length?offers:featured}/></div></div>{catalog.banners.length>1&&<div className="pt-10"><BannerCarousel banners={catalog.banners.slice(1)}/></div>}{seasonal.length>0&&<div className="pt-14"><ProductRow eyebrow="Por tiempo limitado" title="Productos de temporada" products={seasonal}/></div>}<div id="celulares" className="scroll-mt-52 pt-14"><ProductRow eyebrow="Conectate" title="Celulares y accesorios" products={catalog.installed?featured.filter(p=>['celulares','accesorios'].includes(p.categorySlug)):phoneProducts}/></div><div id="electrodomesticos" className="scroll-mt-52 pt-14"><ProductRow eyebrow="Equipá tu casa" title="Tecnología para el hogar" products={catalog.installed?featured.filter(p=>['televisores','electrodomesticos','audio'].includes(p.categorySlug)):homeProducts}/></div></main></div>}

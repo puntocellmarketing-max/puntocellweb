@@ -1,4 +1,5 @@
 import StoreIcon, { type StoreIconName } from "./StoreIcon";
+import type { EcommerceCategory } from "@/lib/ecommerce";
 
 const categories: { name: string; desc: string; icon: StoreIconName; href: string; color: string }[] = [
   { name: "Celulares", desc: "Smartphones y teléfonos", icon: "phone", href: "#celulares", color: "bg-blue-50 text-blue-600" },
@@ -9,7 +10,8 @@ const categories: { name: string; desc: string; icon: StoreIconName; href: strin
   { name: "Accesorios", desc: "Cables, fundas y cargadores", icon: "accessory", href: "#celulares", color: "bg-emerald-50 text-emerald-600" },
 ];
 
-export default function CategoryGrid() {
+export default function CategoryGrid({ items }: { items?: EcommerceCategory[] }) {
+  const dynamicCategories = items?.length ? items.slice(0, 12).map((item, index) => ({ name: item.name, desc: item.description || `${item.productCount || 0} productos`, icon: categories[index % categories.length].icon, href: `/categoria/${item.slug}`, color: categories[index % categories.length].color })) : categories;
   return (
     <section>
       <div className="mb-5 flex items-end justify-between gap-4">
@@ -17,7 +19,7 @@ export default function CategoryGrid() {
         <a href="#productos" className="hidden items-center gap-2 text-sm font-bold text-blue-600 hover:text-blue-700 sm:flex">Ver todo <StoreIcon name="arrow" className="h-4 w-4" /></a>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {categories.map((category) => (
+        {dynamicCategories.map((category) => (
           <a key={category.name} href={category.href} className="group rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm transition duration-200 hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg">
             <span className={`mx-auto grid h-16 w-16 place-items-center rounded-2xl transition group-hover:scale-105 ${category.color}`}><StoreIcon name={category.icon} className="h-9 w-9" /></span>
             <h3 className="mt-4 text-sm font-extrabold text-slate-900">{category.name}</h3>

@@ -1,7 +1,8 @@
 import { whatsappUrl } from "../config/site";
 import StoreIcon from "./StoreIcon";
+import type { EcommerceBanner } from "@/lib/ecommerce";
 
-export default function HeroRetail() {
+export default function HeroRetail({ banner }: { banner?: EcommerceBanner }) {
   const wa = whatsappUrl("Hola PuntoCell, quiero conocer las ofertas disponibles.");
   const externalWa = wa.startsWith("http");
 
@@ -17,16 +18,13 @@ export default function HeroRetail() {
             <span className="h-2 w-2 rounded-full bg-cyan-400" />
             Tecnología para tu día a día
           </div>
-          <h1 className="mt-5 text-4xl font-black leading-[1.05] tracking-[-0.04em] sm:text-5xl lg:text-6xl">
-            Todo lo que buscás,
-            <span className="block text-blue-400">en un solo lugar.</span>
-          </h1>
+          <h1 className="mt-5 text-4xl font-black leading-[1.05] tracking-[-0.04em] sm:text-5xl lg:text-6xl">{banner?.title || <>Todo lo que buscás,<span className="block text-blue-400">en un solo lugar.</span></>}</h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-            Celulares, electrodomésticos, informática y accesorios con asesoramiento antes y después de tu compra.
+            {banner?.subtitle || "Celulares, electrodomésticos, informática y accesorios con asesoramiento antes y después de tu compra."}
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <a href="#ofertas" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white transition hover:bg-blue-500">
-              Ver productos <StoreIcon name="arrow" className="h-4 w-4" />
+            <a href={banner?.buttonUrl || "#ofertas"} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white transition hover:bg-blue-500">
+              {banner?.buttonLabel || "Ver productos"} <StoreIcon name="arrow" className="h-4 w-4" />
             </a>
             <a href={wa} target={externalWa ? "_blank" : undefined} rel={externalWa ? "noreferrer" : undefined} className="inline-flex h-12 items-center justify-center rounded-xl border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur transition hover:bg-white/15">
               Consultar por WhatsApp
@@ -40,6 +38,7 @@ export default function HeroRetail() {
         </div>
 
         <div className="relative mx-auto hidden h-[360px] w-full max-w-[510px] lg:block">
+          {banner?.imageUrl ? <div className="absolute inset-0 overflow-hidden rounded-[36px] border border-white/15 bg-white/10 p-3 shadow-2xl backdrop-blur"><img src={banner.imageUrl} alt="" className="h-full w-full rounded-[28px] object-cover" /></div> : <>
           <div className="absolute left-6 top-4 h-72 w-52 rotate-[-7deg] rounded-[38px] border-[8px] border-slate-800 bg-gradient-to-br from-blue-500 via-indigo-600 to-slate-950 p-4 shadow-2xl">
             <div className="h-4 w-16 rounded-full bg-slate-900/80 mx-auto" />
             <div className="mt-16 text-center"><StoreIcon name="phone" className="mx-auto h-20 w-20 text-white/80" /><p className="mt-4 text-xs font-bold uppercase tracking-[0.2em] text-blue-100">Smartphones</p></div>
@@ -52,6 +51,7 @@ export default function HeroRetail() {
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Comprá como prefieras</p>
             <p className="mt-1 text-lg font-black">Consultá formas de pago</p>
           </div>
+          </>}
         </div>
       </div>
     </section>

@@ -14,6 +14,7 @@ export const site = {
 } as const;
 
 export function whatsappUrl(message = "Hola PuntoCell, quiero hacer una consulta.") {
-  if (!site.whatsapp) return "/contact";
-  return `https://wa.me/${site.whatsapp}?text=${encodeURIComponent(message)}`;
+  const phone = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || site.whatsapp).replace(/\D/g, "");
+  if (!phone) return "/contact";
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }

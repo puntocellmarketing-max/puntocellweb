@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { banners as allBanners } from "../data/banners";
 import StoreIcon from "./StoreIcon";
+import type { EcommerceBanner } from "@/lib/ecommerce";
 
-export default function BannerCarousel() {
-  const banners = useMemo(() => allBanners.filter((banner) => banner.enabled !== false), []);
+export default function BannerCarousel({ banners: dynamicBanners }: { banners?: EcommerceBanner[] }) {
+  const banners = useMemo(() => dynamicBanners?.length ? dynamicBanners.map((banner) => ({ title: banner.title, subtitle: banner.subtitle, cta: banner.buttonLabel, href: banner.buttonUrl, badge: "Promoción PuntoCell", icon: "home" as const, theme: banner.theme === "emerald" ? "from-emerald-700 to-teal-500" : banner.theme === "violet" ? "from-violet-800 to-fuchsia-600" : banner.theme === "orange" ? "from-orange-700 to-amber-500" : banner.theme === "navy" ? "from-slate-950 to-blue-800" : "from-blue-700 to-cyan-500", imageUrl: banner.imageUrl, enabled: true })) : allBanners.filter((banner) => banner.enabled !== false).map((banner) => ({ ...banner, imageUrl: "" })), [dynamicBanners]);
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function BannerCarousel() {
           <p className="mt-3 max-w-xl text-sm leading-6 text-white/75 sm:text-base">{banner.subtitle}</p>
           <a href={banner.href} className="mt-6 inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-bold text-slate-950 transition hover:bg-slate-100">{banner.cta}<StoreIcon name="arrow" className="h-4 w-4" /></a>
         </div>
-        <div className="hidden justify-center md:flex"><span className="grid h-44 w-44 rotate-3 place-items-center rounded-[36px] border border-white/20 bg-white/10 shadow-2xl backdrop-blur"><StoreIcon name={banner.icon} className="h-28 w-28 text-white/85" /></span></div>
+        <div className="hidden justify-center md:flex"><span className="grid h-44 w-44 rotate-3 place-items-center overflow-hidden rounded-[36px] border border-white/20 bg-white/10 shadow-2xl backdrop-blur">{banner.imageUrl ? <img src={banner.imageUrl} alt="" className="h-full w-full object-cover" /> : <StoreIcon name={banner.icon} className="h-28 w-28 text-white/85" />}</span></div>
       </div>
       {banners.length > 1 && <div className="absolute bottom-5 left-7 flex gap-2 sm:left-10 lg:left-12">{banners.map((item, index) => <button key={item.title} type="button" onClick={() => setCurrent(index)} aria-label={`Mostrar promoción ${index + 1}`} className={`h-2 rounded-full transition-all ${current === index ? "w-8 bg-white" : "w-2 bg-white/40 hover:bg-white/70"}`} />)}</div>}
     </section>

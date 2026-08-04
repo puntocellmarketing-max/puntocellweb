@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { site, whatsappUrl } from "../config/site";
 import StoreIcon from "./StoreIcon";
+import CartButton from "./cart/CartButton";
 
 const categories = [
-  { label: "Ofertas", href: "#ofertas", featured: true },
-  { label: "Celulares", href: "#celulares" },
-  { label: "Electrodomésticos", href: "#electrodomesticos" },
-  { label: "TV y audio", href: "#electrodomesticos" },
-  { label: "Informática", href: "#categorias" },
-  { label: "Accesorios", href: "#celulares" },
+  { label: "Ofertas", href: "/#ofertas", featured: true },
+  { label: "Celulares", href: "/#celulares" },
+  { label: "Electrodomésticos", href: "/#electrodomesticos" },
+  { label: "TV y audio", href: "/#electrodomesticos" },
+  { label: "Informática", href: "/#categorias" },
+  { label: "Accesorios", href: "/#celulares" },
 ];
 
 export default function Header() {
@@ -34,7 +35,7 @@ export default function Header() {
             </span>
           </Link>
 
-          <form action="/#productos" className="order-3 hidden min-w-0 flex-1 md:flex" role="search">
+          <form action="/buscar" className="order-3 hidden min-w-0 flex-1 md:flex" role="search">
             <label className="relative flex w-full items-center">
               <span className="sr-only">Buscar productos</span>
               <StoreIcon name="search" className="pointer-events-none absolute left-4 h-5 w-5 text-slate-400" />
@@ -51,9 +52,10 @@ export default function Header() {
           <a href={wa} target={externalWa ? "_blank" : undefined} rel={externalWa ? "noreferrer" : undefined} className="inline-flex h-11 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-500/15 transition hover:bg-emerald-600">
             WhatsApp
           </a>
+          <CartButton />
         </div>
 
-        <form action="/#productos" className="pb-3 md:hidden" role="search">
+        <form action="/buscar" className="pb-3 md:hidden" role="search">
           <label className="relative flex items-center">
             <span className="sr-only">Buscar productos</span>
             <StoreIcon name="search" className="pointer-events-none absolute left-4 h-5 w-5 text-slate-400" />
@@ -64,7 +66,7 @@ export default function Header() {
 
       <nav className="border-t border-slate-100 bg-white" aria-label="Categorías principales">
         <div className="no-scrollbar mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 lg:px-6">
-          <a href="#categorias" className="flex shrink-0 items-center gap-2 border-r border-slate-200 py-3 pr-5 text-sm font-bold text-slate-900">
+          <a href="/#categorias" className="flex shrink-0 items-center gap-2 border-r border-slate-200 py-3 pr-5 text-sm font-bold text-slate-900">
             <StoreIcon name="menu" className="h-5 w-5" /> Categorías
           </a>
           {categories.map((item) => (

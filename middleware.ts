@@ -15,7 +15,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith("/crm")) {
+  if (pathname.startsWith("/crm") || pathname.startsWith("/admin")) {
     const token = req.cookies.get(AUTH_COOKIE_NAME)?.value;
 
     if (!token) {
@@ -29,5 +29,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/crm/:path*"],
+  matcher: ["/crm/:path*", "/admin/:path*"],
 };

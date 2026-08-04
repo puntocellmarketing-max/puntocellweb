@@ -1,0 +1,18 @@
+import Link from "next/link";
+import { AlertTriangle, Boxes, ImageIcon, PackageCheck, PackageOpen, ShoppingBag, Tags } from "lucide-react";
+import { getAdminDashboardMetrics } from "@/lib/ecommerce";
+
+export default async function StoreAdminDashboard() {
+  const metrics = await getAdminDashboardMetrics();
+  const cards = [
+    { label: "Productos", value: metrics.products, detail: `${metrics.activeProducts} publicados`, icon: PackageOpen, color: "bg-blue-50 text-blue-600" },
+    { label: "Categorías", value: metrics.categories, detail: "activas", icon: Tags, color: "bg-violet-50 text-violet-600" },
+    { label: "Pedidos", value: metrics.orders, detail: `${metrics.pendingOrders} pendientes`, icon: ShoppingBag, color: "bg-emerald-50 text-emerald-600" },
+    { label: "Banners", value: metrics.banners, detail: "publicados", icon: ImageIcon, color: "bg-amber-50 text-amber-600" },
+  ];
+  return <div><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[0.18em] text-blue-600">PuntoCell ecommerce</p><h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Resumen de la tienda</h1><p className="mt-2 text-sm text-slate-500">Administrá el catálogo, las promociones y los pedidos desde un solo lugar.</p></div><Link href="/admin/tienda/productos" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-lg shadow-blue-600/15 hover:bg-blue-700"><PackageCheck className="h-5 w-5" />Nuevo producto</Link></div>
+    {!metrics.installed && <div className="mt-7 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900"><AlertTriangle className="h-6 w-6 shrink-0" /><div><p className="font-extrabold">Falta instalar las tablas del ecommerce</p><p className="mt-1 text-sm leading-6">Ejecutá <code className="rounded bg-white px-1.5 py-0.5">database/ecommerce_schema.sql</code> en la base MySQL de Railway. El CRM no será modificado.</p></div></div>}
+    <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({ label, value, detail, icon: Icon, color }) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><span className={`grid h-12 w-12 place-items-center rounded-2xl ${color}`}><Icon className="h-6 w-6" /></span><span className="text-3xl font-black text-slate-950">{value}</span></div><p className="mt-5 font-extrabold text-slate-900">{label}</p><p className="mt-1 text-sm text-slate-500">{detail}</p></div>)}</div>
+    <div className="mt-7 grid gap-5 lg:grid-cols-3"><Link href="/admin/tienda/productos" className="rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-lg"><PackageOpen className="h-7 w-7 text-blue-400" /><h2 className="mt-5 text-xl font-black">Cargar el catálogo</h2><p className="mt-2 text-sm leading-6 text-slate-300">Fotos, precios contado, financiación, stock y visibilidad.</p></Link><Link href="/admin/tienda/colecciones" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><Boxes className="h-7 w-7 text-violet-600" /><h2 className="mt-5 text-xl font-black">Preparar una temporada</h2><p className="mt-2 text-sm leading-6 text-slate-500">Organizá ofertas para fechas especiales y campañas.</p></Link><Link href="/admin/tienda/banners" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><ImageIcon className="h-7 w-7 text-amber-600" /><h2 className="mt-5 text-xl font-black">Cambiar los banners</h2><p className="mt-2 text-sm leading-6 text-slate-500">Programá imágenes, textos y botones sin tocar el código.</p></Link></div>
+  </div>;
+}

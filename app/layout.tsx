@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Footer from "./components/Footer";
-import Header from "./components/Header";
+import PublicChrome from "./components/PublicChrome";
 
 export const metadata: Metadata = {
   title: "PuntoCell | Tecnología, celulares y electrodomésticos",
@@ -12,9 +11,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="es">
       <body className="bg-[#f6f7fb] text-slate-900 antialiased">
-        <Header />
-        {children}
-        <Footer />
+        <PublicChrome>{children}</PublicChrome>
       </body>
     </html>
   );
