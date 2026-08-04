@@ -1,112 +1,35 @@
-// app/components/BannerCarousel.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { banners as allBanners } from "../data/banners"; // ✅ trae datos de afuera
+import { banners as allBanners } from "../data/banners";
+import StoreIcon from "./StoreIcon";
 
 export default function BannerCarousel() {
-  // Permite desactivar banners (enabled: false) sin borrarlos
-  const banners = useMemo(
-    () => allBanners.filter((b) => b.enabled !== false),
-    []
-  );
-
-  const [i, setI] = useState(0);
-
-  // Seguridad: si cambian banners y el índice queda fuera
-  useEffect(() => {
-    if (i >= banners.length) setI(0);
-  }, [banners.length, i]);
+  const banners = useMemo(() => allBanners.filter((banner) => banner.enabled !== false), []);
+  const [current, setCurrent] = useState(0);
 
   useEffect(() => {
-    if (banners.length <= 1) return; // no hace falta rotar si hay 0 o 1
-    const t = setInterval(() => setI((v) => (v + 1) % banners.length), 4500);
-    return () => clearInterval(t);
+    if (banners.length <= 1) return;
+    const timer = window.setInterval(() => setCurrent((value) => (value + 1) % banners.length), 5500);
+    return () => window.clearInterval(timer);
   }, [banners.length]);
 
-  // Si no hay banners activos, no renderiza el carrusel
-  if (banners.length === 0) return null;
-
-  const b = banners[i];
+  if (!banners.length) return null;
+  const banner = banners[current];
 
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-blue-50">
-      <div className="grid gap-6 p-7 md:grid-cols-2 md:items-center md:p-10">
+    <section className={`relative overflow-hidden rounded-[26px] bg-gradient-to-r ${banner.theme} text-white`}>
+      <div className="absolute -right-10 -top-20 h-64 w-64 rounded-full border-[40px] border-white/10" />
+      <div className="relative grid min-h-[280px] items-center gap-7 px-7 py-10 sm:px-10 md:grid-cols-[1.2fr_0.8fr] lg:px-12">
         <div>
-          <p className="mb-2 inline-flex rounded-full bg-blue-600/10 px-3 py-1 text-xs font-semibold text-blue-700">
-            {b.badge ?? "Punto Cell · Canal oficial"}
-          </p>
-
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
-            {b.title}
-          </h2>
-          <p className="mt-2 text-slate-600">{b.subtitle}</p>
-
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <a
-              href={b.href}
-              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            >
-              {b.cta}
-            </a>
-            <a
-              href="/privacidad"
-              className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Políticas
-            </a>
-          </div>
+          <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-white/70">{banner.badge}</p>
+          <h2 className="mt-3 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">{banner.title}</h2>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-white/75 sm:text-base">{banner.subtitle}</p>
+          <a href={banner.href} className="mt-6 inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-bold text-slate-950 transition hover:bg-slate-100">{banner.cta}<StoreIcon name="arrow" className="h-4 w-4" /></a>
         </div>
-
-        {/* panel “promo” */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Canales oficiales</div>
-          <div className="mt-3 grid gap-3">
-            <div className="rounded-xl border border-slate-200 p-4">
-              <div className="text-sm font-semibold text-slate-900">WhatsApp Business</div>
-              <div className="text-sm text-slate-600">Soporte y cobranzas.</div>
-            </div>
-            <div className="rounded-xl border border-slate-200 p-4">
-              <div className="text-sm font-semibold text-slate-900">Catálogo</div>
-              <div className="text-sm text-slate-600">Productos y accesorios (en expansión).</div>
-            </div>
-          </div>
-        </div>
+        <div className="hidden justify-center md:flex"><span className="grid h-44 w-44 rotate-3 place-items-center rounded-[36px] border border-white/20 bg-white/10 shadow-2xl backdrop-blur"><StoreIcon name={banner.icon} className="h-28 w-28 text-white/85" /></span></div>
       </div>
-
-      {/* dots */}
-      <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
-        {banners.map((_, idx) => (
-          <button
-            key={idx}
-            onClick={() => setI(idx)}
-            className={`h-2.5 w-2.5 rounded-full transition ${
-              idx === i ? "bg-blue-600" : "bg-slate-300 hover:bg-slate-400"
-            }`}
-            aria-label={`Banner ${idx + 1}`}
-          />
-        ))}
-      </div>
-
-      {/* prev/next */}
-      {banners.length > 1 && (
-        <>
-          <button
-            onClick={() => setI((v) => (v - 1 + banners.length) % banners.length)}
-            className="absolute left-3 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-white"
-            aria-label="Anterior"
-          >
-            ‹
-          </button>
-          <button
-            onClick={() => setI((v) => (v + 1) % banners.length)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-white"
-            aria-label="Siguiente"
-          >
-            ›
-          </button>
-        </>
-      )}
+      {banners.length > 1 && <div className="absolute bottom-5 left-7 flex gap-2 sm:left-10 lg:left-12">{banners.map((item, index) => <button key={item.title} type="button" onClick={() => setCurrent(index)} aria-label={`Mostrar promoción ${index + 1}`} className={`h-2 rounded-full transition-all ${current === index ? "w-8 bg-white" : "w-2 bg-white/40 hover:bg-white/70"}`} />)}</div>}
     </section>
   );
 }

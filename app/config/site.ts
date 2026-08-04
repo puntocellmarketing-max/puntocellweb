@@ -1,14 +1,19 @@
-// app/config/site.ts
+// Datos generales del negocio. Completá estos campos antes de publicar.
 export const site = {
-  name: "Punto Cell",
-  tagline: "Tecnología & Atención al cliente",
-  city: "Paraguay",
-  whatsapp: "595981234567", // TODO: tu número real
-  email: "soporte@puntocell.com", // TODO: tu email real
-  address: "Dirección (completar)",
-  hours: "Lun a Sáb 08:00 a 18:00",
+  name: "PuntoCell",
+  tagline: "Tecnología, electrodomésticos y más",
+  city: "Concepción, Paraguay",
+  whatsapp: "", // Ejemplo: 595981123456 (sin +, espacios ni guiones)
+  email: "",
+  address: "Concepción, Paraguay",
+  hours: "Lun. a sáb. · 08:00 a 18:00",
   social: {
     instagram: "#",
     facebook: "#",
   },
 } as const;
+
+export function whatsappUrl(message = "Hola PuntoCell, quiero hacer una consulta.") {
+  if (!site.whatsapp) return "/contact";
+  return `https://wa.me/${site.whatsapp}?text=${encodeURIComponent(message)}`;
+}

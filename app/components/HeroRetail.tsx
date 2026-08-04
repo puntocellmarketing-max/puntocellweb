@@ -1,180 +1,59 @@
-// app/components/HeroRetail.tsx
-import Link from "next/link";
-import Image from "next/image";
-import { site } from "../config/site";
+import { whatsappUrl } from "../config/site";
+import StoreIcon from "./StoreIcon";
 
 export default function HeroRetail() {
+  const wa = whatsappUrl("Hola PuntoCell, quiero conocer las ofertas disponibles.");
+  const externalWa = wa.startsWith("http");
+
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white">
-      {/* Fondo */}
-      <div className="absolute inset-0">
-        {/* Imagen opcional (si existe) */}
-        <div className="absolute inset-0 opacity-20">
-          <Image
-            src="/hero/hero-bg.jpg"
-            alt=""
-            fill
-            className="object-cover"
-            priority
-          />
-        </div>
+    <section className="relative overflow-hidden rounded-[28px] bg-slate-950 text-white shadow-2xl shadow-slate-900/10">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_15%,rgba(37,99,235,0.48),transparent_34%),radial-gradient(circle_at_25%_100%,rgba(14,165,233,0.22),transparent_36%)]" />
+      <div className="absolute -right-16 -top-24 h-72 w-72 rounded-full border border-white/10" />
+      <div className="absolute -right-2 -top-10 h-52 w-52 rounded-full border border-white/10" />
 
-        {/* Gradientes corporativos */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-sky-50" />
-        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-blue-200/40 blur-3xl" />
-        <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl" />
-      </div>
-
-      <div className="relative grid gap-10 p-6 md:grid-cols-[1.2fr_0.8fr] md:p-10">
-        {/* Columna izquierda */}
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-            <span className="inline-block h-2 w-2 rounded-full bg-blue-600" />
-            Punto Cell • Canal oficial
+      <div className="relative grid min-h-[470px] items-center gap-8 px-6 py-10 sm:px-10 lg:grid-cols-[1.05fr_0.95fr] lg:px-14 lg:py-12">
+        <div className="max-w-2xl">
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-500/15 px-3 py-1.5 text-xs font-bold text-blue-100">
+            <span className="h-2 w-2 rounded-full bg-cyan-400" />
+            Tecnología para tu día a día
           </div>
-
-          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-slate-900 md:text-5xl">
-            Tecnología, accesorios y soporte
-            <span className="text-blue-700"> con atención por WhatsApp</span>
+          <h1 className="mt-5 text-4xl font-black leading-[1.05] tracking-[-0.04em] sm:text-5xl lg:text-6xl">
+            Todo lo que buscás,
+            <span className="block text-blue-400">en un solo lugar.</span>
           </h1>
-
-          <p className="mt-4 max-w-xl text-base leading-relaxed text-slate-600 md:text-lg">
-            Consultá stock y precios. Coordinamos entrega/retira. Soporte post-venta y
-            garantías según disponibilidad.
+          <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+            Celulares, electrodomésticos, informática y accesorios con asesoramiento antes y después de tu compra.
           </p>
-
-          {/* CTAs */}
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <a
-              href={`https://wa.me/${site.whatsapp}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            >
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+            <a href="#ofertas" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white transition hover:bg-blue-500">
+              Ver productos <StoreIcon name="arrow" className="h-4 w-4" />
+            </a>
+            <a href={wa} target={externalWa ? "_blank" : undefined} rel={externalWa ? "noreferrer" : undefined} className="inline-flex h-12 items-center justify-center rounded-xl border border-white/20 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur transition hover:bg-white/15">
               Consultar por WhatsApp
             </a>
-
-            <Link
-              href="/contacto"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-            >
-              Ver contacto y horarios
-            </Link>
           </div>
-
-          {/* Search mini (retail vibe) */}
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white/70 p-3 backdrop-blur">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none ring-blue-600/20 focus:ring-4"
-                placeholder="Buscar: iPhone, Samsung, cargadores, auriculares..."
-              />
-              <button
-                type="button"
-                className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                Buscar
-              </button>
-            </div>
-
-            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
-              <span className="rounded-full bg-slate-100 px-3 py-1">Celulares</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">Accesorios</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">Audio</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">Smart Home</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">Computación</span>
-            </div>
-          </div>
-
-          {/* Badges confianza */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <Badge title="Respuesta rápida" desc="Atención por WhatsApp" />
-            <Badge title="Post-venta" desc="Soporte y garantías" />
-            <Badge title="Envíos/Retiro" desc="Según coordinación" />
+          <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs font-semibold text-slate-300">
+            <span className="flex items-center gap-2"><StoreIcon name="shield" className="h-4 w-4 text-emerald-400" /> Garantía y respaldo</span>
+            <span className="flex items-center gap-2"><StoreIcon name="card" className="h-4 w-4 text-blue-400" /> Opciones de pago</span>
+            <span className="flex items-center gap-2"><StoreIcon name="headset" className="h-4 w-4 text-cyan-400" /> Atención personalizada</span>
           </div>
         </div>
 
-        {/* Columna derecha (tarjetas promo estilo retail) */}
-        <div className="grid gap-3">
-          <PromoCard
-            title="Cuotas y financiación"
-            desc="Opciones según disponibilidad (consultar)."
-            cta="Consultar"
-            href={`https://wa.me/${site.whatsapp}`}
-            tone="blue"
-          />
-
-          <PromoCard
-            title="Catálogo en expansión"
-            desc="Productos y accesorios: carga progresiva."
-            cta="Ver categorías"
-            href="#categorias"
-            tone="light"
-          />
-
-          <PromoCard
-            title="Políticas y privacidad"
-            desc="Cumplimiento para integraciones con plataformas externas."
-            cta="Ver políticas"
-            href="/privacidad"
-            tone="light"
-          />
+        <div className="relative mx-auto hidden h-[360px] w-full max-w-[510px] lg:block">
+          <div className="absolute left-6 top-4 h-72 w-52 rotate-[-7deg] rounded-[38px] border-[8px] border-slate-800 bg-gradient-to-br from-blue-500 via-indigo-600 to-slate-950 p-4 shadow-2xl">
+            <div className="h-4 w-16 rounded-full bg-slate-900/80 mx-auto" />
+            <div className="mt-16 text-center"><StoreIcon name="phone" className="mx-auto h-20 w-20 text-white/80" /><p className="mt-4 text-xs font-bold uppercase tracking-[0.2em] text-blue-100">Smartphones</p></div>
+          </div>
+          <div className="absolute right-0 top-8 w-72 rounded-3xl border border-white/15 bg-white/10 p-5 shadow-2xl backdrop-blur-xl">
+            <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-blue-950 p-6"><StoreIcon name="tv" className="mx-auto h-24 w-24 text-blue-300" /></div>
+            <div className="mt-4 flex items-center justify-between"><div><p className="text-xs font-semibold text-blue-200">Entretenimiento</p><p className="mt-1 font-extrabold">Smart TV y audio</p></div><span className="grid h-9 w-9 place-items-center rounded-full bg-blue-600"><StoreIcon name="arrow" className="h-4 w-4" /></span></div>
+          </div>
+          <div className="absolute bottom-0 left-40 rounded-2xl border border-white/20 bg-white px-5 py-4 text-slate-950 shadow-2xl">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Comprá como prefieras</p>
+            <p className="mt-1 text-lg font-black">Consultá formas de pago</p>
+          </div>
         </div>
       </div>
     </section>
-  );
-}
-
-function Badge({ title, desc }: { title: string; desc: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 backdrop-blur">
-      <div className="text-sm font-semibold text-slate-900">{title}</div>
-      <div className="mt-1 text-xs text-slate-600">{desc}</div>
-    </div>
-  );
-}
-
-function PromoCard({
-  title,
-  desc,
-  cta,
-  href,
-  tone,
-}: {
-  title: string;
-  desc: string;
-  cta: string;
-  href: string;
-  tone: "blue" | "light";
-}) {
-  const base =
-    "rounded-3xl border border-slate-200 p-5 shadow-sm";
-  const bg =
-    tone === "blue"
-      ? "bg-gradient-to-br from-slate-900 via-slate-900 to-blue-800 text-white border-slate-900/10"
-      : "bg-white text-slate-900";
-
-  const button =
-    tone === "blue"
-      ? "bg-white text-slate-900 hover:bg-slate-100"
-      : "bg-blue-600 text-white hover:bg-blue-700";
-
-  return (
-    <div className={`${base} ${bg}`}>
-      <div className="text-xs font-semibold opacity-80">Canales oficiales</div>
-      <div className="mt-2 text-lg font-extrabold tracking-tight">{title}</div>
-      <div className={`mt-2 text-sm ${tone === "blue" ? "text-white/80" : "text-slate-600"}`}>
-        {desc}
-      </div>
-
-      <a
-        href={href}
-        className={`mt-4 inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold ${button}`}
-        target={href.startsWith("http") ? "_blank" : undefined}
-        rel={href.startsWith("http") ? "noreferrer" : undefined}
-      >
-        {cta}
-      </a>
-    </div>
   );
 }
