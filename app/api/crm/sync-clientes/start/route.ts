@@ -28,6 +28,7 @@ type SyncPayload = {
     ultimoPagoHasta?: string | null;
     diasAtrasoMin?: number | null;
     saldoMin?: number | null;
+    anioFacturaPendiente?: number | null;
     soloTelefonosValidos?: boolean;
   };
   options?: {
@@ -67,6 +68,7 @@ type RunSyncConfig = {
   ultimoPagoHasta: string | null;
   diasAtrasoMin: number | null;
   saldoMin: number | null;
+  anioFacturaPendiente: number | null;
   soloTelefonosValidos: boolean;
   limit: number | null;
 };
@@ -229,7 +231,23 @@ export async function POST(req: Request) {
     const ultimoPagoHasta = safeStringOrNull(body.filters?.ultimoPagoHasta);
     const diasAtrasoMin = safeNumberOrNull(body.filters?.diasAtrasoMin);
     const saldoMin = safeNumberOrNull(body.filters?.saldoMin);
+    const anioFacturaPendiente = safeNumberOrNull(
+      body.filters?.anioFacturaPendiente
+    );
     const soloTelefonosValidos = Boolean(body.filters?.soloTelefonosValidos);
+
+    if (
+      anioFacturaPendiente !== null &&
+      (!Number.isInteger(anioFacturaPendiente) ||
+        anioFacturaPendiente < 2000 ||
+        anioFacturaPendiente > 2100)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "El año de factura pendiente debe estar entre 2000 y 2100." },
+        { status: 400 }
+      );
+    }
+
     const limit = safeNumberOrNull(body.options?.limit);
 
     const cfg: RunSyncConfig = {
@@ -252,6 +270,7 @@ export async function POST(req: Request) {
       ultimoPagoHasta,
       diasAtrasoMin,
       saldoMin,
+      anioFacturaPendiente,
       soloTelefonosValidos,
       limit,
     };
@@ -265,6 +284,7 @@ export async function POST(req: Request) {
       ultimoPagoHasta,
       diasAtrasoMin,
       saldoMin,
+      anioFacturaPendiente,
       soloTelefonosValidos,
       limit,
       localView,
@@ -312,7 +332,7 @@ export async function POST(req: Request) {
             ultimoPagoHasta ?? "(sin filtro)"
           }, dias_atraso_min: ${diasAtrasoMin ?? "(sin filtro)"}, saldo_min: ${
             saldoMin ?? "(sin filtro)"
-          }, solo_validos: ${soloTelefonosValidos ? "SI" : "NO"}`
+          }, factura_pendiente_anio: ${anioFacturaPendiente ?? "(sin filtro)"}, solo_validos: ${soloTelefonosValidos ? "SI" : "NO"}`
         ]
       );
     } finally {
@@ -411,6 +431,25 @@ async function runSyncJob(jobId: string, cfg: RunSyncConfig) {
       params.push(cfg.saldoMin);
     }
 
+    if (cfg.anioFacturaPendiente !== null) {
+      // Usa un rango de fechas en vez de YEAR(Fecha) para aprovechar mejor
+      // el índice existente de ve_venta por (codCliente, Fecha).
+      where.push(`
+        EXISTS (
+          SELECT 1
+          FROM ve_venta vv
+          WHERE vv.codCliente = v.codCliente
+            AND vv.Fecha >= ?
+            AND vv.Fecha < ?
+            AND vv.Estado = 'PEN'
+        )
+      `);
+      params.push(
+        `${cfg.anioFacturaPendiente}-01-01`,
+        `${cfg.anioFacturaPendiente + 1}-01-01`
+      );
+    }
+
     if (cfg.soloTelefonosValidos) {
       where.push("telefono_valido = 1");
     }
@@ -419,24 +458,24 @@ async function runSyncJob(jobId: string, cfg: RunSyncConfig) {
 
     const sqlLocal = `
       SELECT
-        codCliente,
-        cliente,
-        celular_original,
-        telefono_original,
-        telefono_fuente,
-        telefono_raw,
-        telefono AS telefono_normalizado,
-        telefono_valido,
-        motivo_telefono_invalido,
-        requiere_revision,
-        dias_atraso,
-        ultimo_pago,
-        saldo,
-        codCategoria,
-        categoria,
-        codZona,
-        zona
-      FROM ${cfg.localView}
+        v.codCliente,
+        v.cliente,
+        v.celular_original,
+        v.telefono_original,
+        v.telefono_fuente,
+        v.telefono_raw,
+        v.telefono AS telefono_normalizado,
+        v.telefono_valido,
+        v.motivo_telefono_invalido,
+        v.requiere_revision,
+        v.dias_atraso,
+        v.ultimo_pago,
+        v.saldo,
+        v.codCategoria,
+        v.categoria,
+        v.codZona,
+        v.zona
+      FROM ${cfg.localView} v
       WHERE ${where.join(" AND ")}
       ${limitSql}
     `;

@@ -23,6 +23,7 @@ type FormState = {
   ultimoPagoHasta: string;
   diasAtrasoMin: string;
   saldoMin: string;
+  anioFacturaPendiente: string;
   soloTelefonosValidos: boolean;
 
   limit: string;
@@ -78,6 +79,7 @@ export default function SyncClientesPage() {
     ultimoPagoHasta: "",
     diasAtrasoMin: "1",
     saldoMin: "1",
+    anioFacturaPendiente: "",
     soloTelefonosValidos: true,
 
     limit: "100",
@@ -228,6 +230,9 @@ export default function SyncClientesPage() {
             ultimoPagoHasta: form.ultimoPagoHasta || null,
             diasAtrasoMin: form.diasAtrasoMin ? Number(form.diasAtrasoMin) : null,
             saldoMin: form.saldoMin ? Number(form.saldoMin) : null,
+            anioFacturaPendiente: form.anioFacturaPendiente
+              ? Number(form.anioFacturaPendiente)
+              : null,
             soloTelefonosValidos: form.soloTelefonosValidos,
           },
           options: {
@@ -450,6 +455,17 @@ export default function SyncClientesPage() {
               onChange={(v) => updateField("saldoMin", v)}
               placeholder="Ej: 1"
             />
+
+            <Field
+              label="Factura pendiente del año"
+              type="number"
+              value={form.anioFacturaPendiente}
+              onChange={(v) => updateField("anioFacturaPendiente", v)}
+              placeholder="Ej: 2025"
+              min={2000}
+              max={2100}
+              step={1}
+            />
           </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -652,12 +668,18 @@ function Field({
   onChange,
   type = "text",
   placeholder = "",
+  min,
+  max,
+  step,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
   placeholder?: string;
+  min?: number;
+  max?: number;
+  step?: number;
 }) {
   return (
     <label className="grid gap-1.5 text-sm">
@@ -668,6 +690,9 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         className="rounded-xl border border-slate-200 px-3 py-2.5 text-slate-900 outline-none transition focus:border-slate-400"
         placeholder={placeholder}
+        min={min}
+        max={max}
+        step={step}
       />
     </label>
   );

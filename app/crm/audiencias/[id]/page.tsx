@@ -208,12 +208,21 @@ export default async function Page({ params }: PageProps) {
               Volver
             </Link>
 
-			<Link
-			  href={`/crm/campanias/crear?idAudiencia=${audiencia.idAudiencia}`}
-			  className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
-			>
-			  Crear campaña
-			</Link>
+            <a
+              href={`/api/crm/audiencias/${audiencia.idAudiencia}/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+            >
+              Exportar PDF
+            </a>
+
+            <Link
+              href={`/crm/campanias/crear?idAudiencia=${audiencia.idAudiencia}`}
+              className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
+            >
+              Crear campaña
+            </Link>
           </div>
         </div>
 

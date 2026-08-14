@@ -94,41 +94,78 @@ export async function GET(
       SELECT
         COUNT(*) AS totalDetalle,
         COALESCE(SUM(saldo), 0) AS saldoTotal,
-        COALESCE(SUM(CASE WHEN telefono IS NOT NULL AND telefono <> '' THEN 1 ELSE 0 END), 0) AS clientesConTelefono,
-        COALESCE(SUM(CASE WHEN telefono IS NULL OR telefono = '' THEN 1 ELSE 0 END), 0) AS clientesSinTelefono,
-        COALESCE(SUM(CASE WHEN telefono_valido = 1 THEN 1 ELSE 0 END), 0) AS clientesTelefonoValido,
-        COALESCE(SUM(CASE WHEN requiere_revision = 1 THEN 1 ELSE 0 END), 0) AS clientesRequierenRevision
+        COALESCE(
+          SUM(
+            CASE
+              WHEN telefono IS NOT NULL AND telefono <> ''
+              THEN 1
+              ELSE 0
+            END
+          ),
+          0
+        ) AS clientesConTelefono,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN telefono IS NULL OR telefono = ''
+              THEN 1
+              ELSE 0
+            END
+          ),
+          0
+        ) AS clientesSinTelefono,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN telefono_valido = 1
+              THEN 1
+              ELSE 0
+            END
+          ),
+          0
+        ) AS clientesTelefonoValido,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN requiere_revision = 1
+              THEN 1
+              ELSE 0
+            END
+          ),
+          0
+        ) AS clientesRequierenRevision
       FROM crm_audiencia_detalle
       WHERE id_audiencia = ?
       `,
       [idAudiencia]
     );
 
-	const [detailRows] = await crmPool.query<AudienceDetailRow[]>(
-	  `
-	  SELECT
-		id_detalle,
-		id_audiencia,
-		cod_cliente,
-		cliente,
-		telefono,
-		telefono_valido,
-		motivo_telefono_invalido,
-		requiere_revision,
-		dias_atraso,
-		saldo,
-		ultimo_pago,
-		categoria,
-		zona,
-		estado_envio
-	  FROM crm_audiencia_detalle
-	  WHERE id_audiencia = ?
-	  ORDER BY cliente ASC
-	  `,
-	  [idAudiencia]
-	);
+    const [detailRows] = await crmPool.query<AudienceDetailRow[]>(
+      `
+      SELECT
+        id_detalle,
+        id_audiencia,
+        cod_cliente,
+        cliente,
+        telefono,
+        telefono_valido,
+        motivo_telefono_invalido,
+        requiere_revision,
+        dias_atraso,
+        saldo,
+        ultimo_pago,
+        categoria,
+        zona,
+        estado_envio
+      FROM crm_audiencia_detalle
+      WHERE id_audiencia = ?
+      ORDER BY cliente ASC
+      `,
+      [idAudiencia]
+    );
 
     const audiencia = audRows[0];
+
     const resumen = summaryRows[0] || {
       totalDetalle: 0,
       saldoTotal: 0,
@@ -140,6 +177,7 @@ export async function GET(
 
     return NextResponse.json({
       ok: true,
+
       audiencia: {
         idAudiencia: Number(audiencia.id_audiencia),
         nombre: audiencia.nombre,
@@ -154,34 +192,46 @@ export async function GET(
         fechaCreacion: audiencia.fecha_creacion,
         estado: audiencia.estado,
       },
+
       resumen: {
         totalDetalle: Number(resumen.totalDetalle ?? 0),
         saldoTotal: Number(resumen.saldoTotal ?? 0),
         clientesConTelefono: Number(resumen.clientesConTelefono ?? 0),
         clientesSinTelefono: Number(resumen.clientesSinTelefono ?? 0),
-        clientesTelefonoValido: Number(resumen.clientesTelefonoValido ?? 0),
-        clientesRequierenRevision: Number(resumen.clientesRequierenRevision ?? 0),
+        clientesTelefonoValido: Number(
+          resumen.clientesTelefonoValido ?? 0
+        ),
+        clientesRequierenRevision: Number(
+          resumen.clientesRequierenRevision ?? 0
+        ),
       },
-		detalle: detailRows.map((row) => ({
-		  idDetalle: Number(row.id_detalle),
-		  idAudiencia: Number(row.id_audiencia),
-		  codCliente: Number(row.cod_cliente),
-		  cliente: row.cliente,
-		  telefono: row.telefono,
-		  telefonoValido: Number(row.telefono_valido ?? 0),
-		  motivoTelefonoInvalido: row.motivo_telefono_invalido,
-		  requiereRevision: Number(row.requiere_revision ?? 0),
-		  diasAtraso: row.dias_atraso == null ? null : Number(row.dias_atraso),
-		  saldo: row.saldo == null ? 0 : Number(row.saldo),
-		  ultimoPago: row.ultimo_pago,
-		  categoria: row.categoria,
-		  zona: row.zona,
-		  estadoEnvio: row.estado_envio,
-		})),
+
+      detalle: detailRows.map((row) => ({
+        idDetalle: Number(row.id_detalle),
+        idAudiencia: Number(row.id_audiencia),
+        codCliente: Number(row.cod_cliente),
+        cliente: row.cliente,
+        telefono: row.telefono,
+        telefonoValido: Number(row.telefono_valido ?? 0),
+        motivoTelefonoInvalido: row.motivo_telefono_invalido,
+        requiereRevision: Number(row.requiere_revision ?? 0),
+        diasAtraso:
+          row.dias_atraso == null ? null : Number(row.dias_atraso),
+        saldo: row.saldo == null ? 0 : Number(row.saldo),
+        ultimoPago: row.ultimo_pago,
+        categoria: row.categoria,
+        zona: row.zona,
+        estadoEnvio: row.estado_envio,
+      })),
     });
   } catch (e: any) {
+    console.error("GET AUDIENCIA DETALLE ERROR:", e);
+
     return NextResponse.json(
-      { ok: false, error: e?.message || String(e) },
+      {
+        ok: false,
+        error: e?.message || String(e),
+      },
       { status: 500 }
     );
   }
