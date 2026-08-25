@@ -541,6 +541,7 @@ export default function CRMConversationsPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const endRef = useRef<HTMLDivElement | null>(null);
+  const chatRequestIdRef = useRef(0);
 
   const selectedConversation = useMemo(() => {
     return convs.find((c) => c.telefono === selectedPhone) || null;
@@ -617,18 +618,11 @@ export default function CRMConversationsPage() {
 
       const rows = Array.isArray(data.rows) ? (data.rows as Conversation[]) : [];
 
+      // IMPORTANTE:
+      // loadConvs solo refresca la bandeja. No debe tocar el cliente seleccionado,
+      // porque una ejecución iniciada desde el chat anterior puede sobrescribir
+      // codCliente/cliente/estado del chat recién abierto.
       setConvs(rows);
-
-      if (selectedPhone) {
-        const current = rows.find((r) => r.telefono === selectedPhone);
-
-        if (current) {
-          setSelectedCodCliente(current.codCliente ?? null);
-          setSelectedCliente(current.cliente ?? null);
-          setSelectedEstado(current.estado ?? "");
-        }
-      }
-
       setConvStatus("");
     } catch (e: any) {
       console.error("Error cargando conversaciones:", e);
@@ -645,9 +639,11 @@ export default function CRMConversationsPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [search, estadoFilter, agendaFilter, onlyUnread, selectedPhone]);
+  }, [search, estadoFilter, agendaFilter, onlyUnread]);
 
   const loadChat = useCallback(async (telefono: string) => {
+    const requestId = ++chatRequestIdRef.current;
+
     try {
       setChatStatus("Cargando historial...");
 
@@ -658,6 +654,10 @@ export default function CRMConversationsPage() {
 
       const data = await res.json();
 
+      // Si el usuario abrió otro chat mientras esta petición estaba en curso,
+      // ignoramos la respuesta anterior para evitar mezclar historiales.
+      if (requestId !== chatRequestIdRef.current) return;
+
       if (!data?.ok) {
         throw new Error(data?.error || "No se pudo cargar historial.");
       }
@@ -665,6 +665,8 @@ export default function CRMConversationsPage() {
       setChat(Array.isArray(data.rows) ? (data.rows as ChatMsg[]) : []);
       setChatStatus("");
     } catch (e: any) {
+      if (requestId !== chatRequestIdRef.current) return;
+
       setChatStatus(e?.message || "Error cargando historial.");
       setChat([]);
     }
@@ -685,15 +687,22 @@ export default function CRMConversationsPage() {
   }
 
   async function openConversation(c: Conversation) {
+    // Tomamos todos los datos desde la misma fila seleccionada y limpiamos
+    // inmediatamente el historial anterior.
     setSelectedPhone(c.telefono);
     setSelectedCodCliente(c.codCliente ?? null);
     setSelectedCliente(c.cliente ?? null);
     setSelectedEstado(c.estado ?? "");
     setReplyText("");
+    setChat([]);
+    setChatStatus("Cargando historial...");
 
+    // No bloqueamos la apertura esperando tareas secundarias.
     await loadChat(c.telefono);
     await marcarLeido(c.telefono);
-    await loadConvs();
+
+    // Refresca solo la bandeja. loadConvs ya no modifica la selección actual.
+    void loadConvs();
   }
 
   async function sendReply() {
@@ -707,6 +716,14 @@ export default function CRMConversationsPage() {
       return;
     }
 
+    // Congelamos el destino al iniciar el envío. Así un cambio de chat durante
+    // la petición no puede combinar teléfono de un cliente con código de otro.
+    const targetPhone = selectedPhone;
+    const targetCodCliente =
+      selectedConversation?.telefono === targetPhone
+        ? selectedConversation.codCliente ?? null
+        : selectedCodCliente;
+
     setReplySaving(true);
 
     try {
@@ -716,9 +733,9 @@ export default function CRMConversationsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          telefono: selectedPhone,
+          telefono: targetPhone,
           mensaje: replyText.trim(),
-          cod_cliente: selectedCodCliente,
+          cod_cliente: targetCodCliente,
         }),
       });
 
@@ -731,7 +748,7 @@ export default function CRMConversationsPage() {
 
       setReplyText("");
 
-      await loadChat(selectedPhone);
+      await loadChat(targetPhone);
       await loadConvs();
     } catch (e: any) {
       alert(`Error: ${e?.message || "No se pudo enviar."}`);
@@ -746,7 +763,13 @@ export default function CRMConversationsPage() {
       return;
     }
 
-    if (!selectedCodCliente) {
+    const targetPhone = selectedPhone;
+    const targetCodCliente =
+      selectedConversation?.telefono === targetPhone
+        ? selectedConversation.codCliente ?? null
+        : selectedCodCliente;
+
+    if (!targetCodCliente) {
       alert("Esta conversación no tiene código de cliente asociado.");
       return;
     }
@@ -760,8 +783,8 @@ export default function CRMConversationsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          codCliente: selectedCodCliente,
-          telefono: selectedPhone,
+          codCliente: targetCodCliente,
+          telefono: targetPhone,
         }),
       });
 
@@ -774,7 +797,7 @@ export default function CRMConversationsPage() {
 
       alert("Extracto enviado correctamente.");
 
-      await loadChat(selectedPhone);
+      await loadChat(targetPhone);
       await loadConvs();
     } catch (e: any) {
       alert(`Error: ${e?.message || "No se pudo enviar el extracto."}`);

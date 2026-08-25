@@ -98,7 +98,7 @@ export async function GET(req: Request) {
         (
           c.telefono LIKE ?
           OR COALESCE(cs.cliente, '') LIKE ?
-          OR CAST(COALESCE(c.cod_cliente, cs.cod_cliente) AS CHAR) LIKE ?
+          OR CAST(COALESCE(cs.cod_cliente, c.cod_cliente) AS CHAR) LIKE ?
           OR COALESCE(c.ultimo_mensaje, '') LIKE ?
           OR COALESCE(cs.zona, '') LIKE ?
           OR COALESCE(cs.categoria, '') LIKE ?
@@ -135,7 +135,7 @@ export async function GET(req: Request) {
     const sql = `
       SELECT
         c.telefono AS telefono,
-        COALESCE(c.cod_cliente, cs.cod_cliente) AS codCliente,
+        COALESCE(cs.cod_cliente, c.cod_cliente) AS codCliente,
         COALESCE(cs.cliente, NULL) AS cliente,
         c.ultimo_mensaje AS ultimoMensaje,
         c.ultimo_tipo AS ultimoTipo,
@@ -160,7 +160,11 @@ export async function GET(req: Request) {
       FROM conversaciones c
 
       LEFT JOIN crm_clientes_sync cs
-        ON cs.telefono_normalizado = c.telefono
+        ON cs.id_sync = (
+          SELECT MAX(cs2.id_sync)
+          FROM crm_clientes_sync cs2
+          WHERE cs2.telefono_normalizado = c.telefono
+        )
 
       LEFT JOIN (
         SELECT a.*
@@ -177,7 +181,7 @@ export async function GET(req: Request) {
       ) ag
         ON (
           ag.cod_cliente IS NOT NULL
-          AND ag.cod_cliente = COALESCE(c.cod_cliente, cs.cod_cliente)
+          AND ag.cod_cliente = COALESCE(cs.cod_cliente, c.cod_cliente)
         )
         OR (
           ag.cod_cliente IS NULL
